@@ -16,6 +16,8 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Windows.Forms;
+using CondorTactico.Audio;
+using CondorTactico.GraphicsEffects;
 using CondorTactico.UI;
 
 namespace CondorTactico
@@ -34,6 +36,10 @@ namespace CondorTactico
         private readonly Button btnRed = new Button();
         private readonly Button btnMetricas = new Button();
         private readonly Button btnAcercaDe = new Button();
+
+        // Efectos visuales cinematográficos (Screen Shake, Ondas expansivas, Sombras pseudo-3D, Casquillos, Vórtices) y HUD militar
+        private readonly GestorEfectosVisualesCombate _efectosVisuales = new GestorEfectosVisualesCombate();
+        private readonly HudTacticoMilitar _hudMilitar = new HudTacticoMilitar();
 
         // Parámetros de misión y enlace táctico
         private string _nombrePilotoActual = "CÓNDOR-01";
@@ -538,6 +544,24 @@ namespace CondorTactico
                         GenerarEstelaPropulsion(nave);
                     }
 
+                    // Humo de daño crítico e ignición si la aeronave tiene salud degradada
+                    if (nave.VidaActual < 20 && (_contadorTickIA % 3 == 0))
+                    {
+                        GenerarExplosionParticulas(
+                            nave.X + nave.Ancho * 0.5f + _rng.Next(-8, 9),
+                            nave.Y + (nave.EsRival ? 10f : nave.Alto - 10f),
+                            Color.FromArgb(255, 65, 20),
+                            4);
+                    }
+                    else if (nave.VidaActual < 40 && (_contadorTickIA % 5 == 0))
+                    {
+                        GenerarExplosionParticulas(
+                            nave.X + nave.Ancho * 0.5f + _rng.Next(-6, 7),
+                            nave.Y + (nave.EsRival ? 10f : nave.Alto - 10f),
+                            Color.FromArgb(130, 40, 40, 45),
+                            2);
+                    }
+
                     // Disparo automático táctico de aeronaves rivales controladas por IA
                     if (nave.EsRival && !nave.ControladaPorRed && (_contadorTickIA % 42 == 0))
                     {
@@ -597,6 +621,13 @@ namespace CondorTactico
             // 8. Actualizar partículas y textos flotantes de impacto
             ActualizarEfectosVisuales();
 
+            // 9. Actualizar cámara cinematográfica, ondas expansivas, destellos y HUD militar
+            _efectosVisuales.Actualizar(0.016f);
+            if (_naveJugador != null && _naveJugador.Activo)
+            {
+                _hudMilitar.Actualizar(0.016f, _naveJugador, _aeronaves);
+            }
+
             if (tiempoImpacto > 0)
             {
                 tiempoImpacto--;
@@ -640,6 +671,13 @@ namespace CondorTactico
                 }
                 _naveJugador.Mover(dx * 0.65f, dy * 0.65f, limites);
                 angulo = _naveJugador.AnguloInclinacion;
+
+                // Vórtices de punta de ala al inclinarse o aladear
+                if (Math.Abs(_naveJugador.AnguloInclinacion) > 2.5f)
+                {
+                    _efectosVisuales.EmitirVorticeAla(_naveJugador.X + 6f, _naveJugador.Y + _naveJugador.Alto * 0.6f);
+                    _efectosVisuales.EmitirVorticeAla(_naveJugador.X + _naveJugador.Ancho - 6f, _naveJugador.Y + _naveJugador.Alto * 0.6f);
+                }
             }
             else
             {
@@ -666,6 +704,22 @@ namespace CondorTactico
                     _proyectiles.Add(salvas[i]);
                 }
                 _gestorRed.EnviarEstadoAeronave(_naveJugador, disparoEnEsteTick: true);
+
+                // Efectos cinemáticos de retroceso de cañón y eyección de casquillos de 20mm
+                _efectosVisuales.Camara.AgregarTrauma(0.08f);
+                _efectosVisuales.EyectarCasquillo(
+                    _naveJugador.X + _naveJugador.Ancho * 0.5f,
+                    _naveJugador.Y + 20f,
+                    haciaIzquierda: _contadorTickIA % 2 == 0);
+
+                if (_naveJugador.Tipo == TipoAeronave.B2_Spirit_Stealth)
+                {
+                    SintetizadorAudioTactico.ReproducirMisil();
+                }
+                else
+                {
+                    SintetizadorAudioTactico.ReproducirCanon();
+                }
             }
         }
 
@@ -695,6 +749,21 @@ namespace CondorTactico
                 esCritico ? Color.OrangeRed : Color.DeepSkyBlue,
                 esCritico ? 22 : 10);
 
+            // Efectos visuales de trauma de cámara, destello lumínico, ondas expansivas y audio procedural
+            if (esCritico)
+            {
+                _efectosVisuales.Camara.AgregarTrauma(0.38f);
+                _efectosVisuales.Destello.Disparar(Color.FromArgb(255, 255, 130, 70), 0.42f);
+                _efectosVisuales.CrearOndaExpansiva(proyectil.X, proyectil.Y, radioMax: 70f, Color.FromArgb(255, 110, 40));
+                SintetizadorAudioTactico.ReproducirExplosion(esCritica: true);
+            }
+            else
+            {
+                _efectosVisuales.Camara.AgregarTrauma(0.12f);
+                _efectosVisuales.CrearOndaExpansiva(proyectil.X, proyectil.Y, radioMax: 35f, Color.DeepSkyBlue);
+                SintetizadorAudioTactico.ReproducirImpacto();
+            }
+
             if (naveImpactada.EsRival)
             {
                 _naveJugador.PuntajeTactico += resultado.DanoTotal * 10;
@@ -706,6 +775,16 @@ namespace CondorTactico
                         naveImpactada.Y + naveImpactada.Alto * 0.5f,
                         Color.Gold,
                         45);
+
+                    _efectosVisuales.Camara.AgregarTrauma(0.68f);
+                    _efectosVisuales.Destello.Disparar(Color.FromArgb(255, 255, 230, 160), 0.65f);
+                    _efectosVisuales.CrearOndaExpansiva(
+                        naveImpactada.X + naveImpactada.Ancho * 0.5f,
+                        naveImpactada.Y + naveImpactada.Alto * 0.5f,
+                        radioMax: 140f,
+                        Color.Gold,
+                        velocidad: 320f);
+                    SintetizadorAudioTactico.ReproducirExplosion(esCritica: true);
                 }
 
                 if (esCritico)
@@ -839,11 +918,20 @@ namespace CondorTactico
             int w = contiene.Width;
             int h = contiene.Height;
 
-            // 1. Cielo estratosférico pre-renderizado (cero asignaciones GDI+ por frame)
+            var estadoCamara = g.Save();
+
+            // 1. Aplicar sacudida de pantalla cinemática (Screen Shake) por retroceso y explosiones
+            if (Math.Abs(_efectosVisuales.Camara.OffsetX) > 0.04f || Math.Abs(_efectosVisuales.Camara.OffsetY) > 0.04f)
+            {
+                g.TranslateTransform(_efectosVisuales.Camara.OffsetX, _efectosVisuales.Camara.OffsetY);
+                g.RotateTransform(_efectosVisuales.Camara.AnguloRotacion);
+            }
+
+            // 2. Cielo estratosférico pre-renderizado (cero asignaciones GDI+ por frame)
             Bitmap fondoCielo = RecursosGraficosHud.ObtenerFondoCielo(w, h);
             g.DrawImageUnscaled(fondoCielo, 0, 0);
 
-            // 2. Retícula táctica de radar de baja opacidad
+            // 3. Retícula táctica de radar de baja opacidad
             Pen pRadar = RecursosGraficosHud.PlumaRadar;
             for (int rx = 0; rx < w; rx += 72)
             {
@@ -854,7 +942,10 @@ namespace CondorTactico
                 g.DrawLine(pRadar, 0, ry, w, ry);
             }
 
-            // 3. Nubes estratosféricas semitransparentes en paralaje
+            // 4. Sombras atmosféricas suaves pseudo-3D proyectadas debajo de las aeronaves
+            _efectosVisuales.DibujarSombrasAeronaves(g, _aeronaves, RecursosGraficosHud.BrochaDinamica);
+
+            // 5. Nubes estratosféricas semitransparentes en paralaje
             SolidBrush bNube = RecursosGraficosHud.BrochaNube;
             for (int i = 0; i < _nubesEstratosfera.Length; i++)
             {
@@ -864,19 +955,22 @@ namespace CondorTactico
                 g.FillEllipse(bNube, n.X, n.Y, nw, nh);
             }
 
-            // 4. Dibujar Proyectiles activos
+            // 6. Vórtices de ala y casquillos de munición en vuelo
+            _efectosVisuales.DibujarVorticesYCasquillos(g, RecursosGraficosHud.BrochaDinamica);
+
+            // 7. Dibujar Proyectiles activos
             for (int i = 0; i < _proyectiles.Count; i++)
             {
                 _proyectiles[i].Dibujar(g);
             }
 
-            // 5. Dibujar Aeronaves Polimórficas (B-2 Spirit AF 82-1071 y F-35 Lightning II)
+            // 8. Dibujar Aeronaves Polimórficas (B-2 Spirit AF 82-1071 y F-35 Lightning II)
             for (int i = 0; i < _aeronaves.Count; i++)
             {
                 _aeronaves[i].Dibujar(g);
             }
 
-            // 6. Dibujar Partículas de Combate y Postcombustión (usando brocha dinámica mutable)
+            // 9. Dibujar Partículas de Combate y Postcombustión (usando brocha dinámica mutable)
             SolidBrush bPart = RecursosGraficosHud.BrochaDinamica;
             for (int i = 0; i < _particulas.Count; i++)
             {
@@ -886,7 +980,10 @@ namespace CondorTactico
                 g.FillEllipse(bPart, pt.X - pt.Radio, pt.Y - pt.Radio, pt.Radio * 2f, pt.Radio * 2f);
             }
 
-            // 7. Dibujar Textos Flotantes de Impacto Geométrico ("impact -10")
+            // 10. Ondas expansivas ópticas con halo refractivo
+            _efectosVisuales.DibujarOndasExpansivas(g, pRadar);
+
+            // 11. Dibujar Textos Flotantes de Impacto Geométrico ("impact -10")
             Font fImpacto = RecursosGraficosHud.FuenteImpacto;
             SolidBrush bSombra = RecursosGraficosHud.BrochaSombra;
             for (int i = 0; i < _textosImpacto.Count; i++)
@@ -897,16 +994,28 @@ namespace CondorTactico
                 g.DrawString(ti.Texto, fImpacto, bPart, ti.X, ti.Y);
             }
 
-            // 8. Dibujar Tarjeta Táctica Inferior Izquierda de la Aeronave Activa
+            // 12. Destello atmosférico lumínico por detonaciones
+            _efectosVisuales.Destello.Dibujar(g, w, h, RecursosGraficosHud.BrochaDinamica);
+
+            // 13. HUD militar holográfico de 5ª generación (horizonte, cabeceo, radar AESA, retícula PIPER)
+            if (_naveJugador != null)
+            {
+                _hudMilitar.Dibujar(g, w, h, _naveJugador, RecursosGraficosHud.BrochaDinamica, pRadar);
+            }
+
+            // Restaurar cámara antes de pintar controles estáticos
+            g.Restore(estadoCamara);
+
+            // 14. Dibujar Tarjeta Táctica Inferior Izquierda de la Aeronave Activa
             DibujarFichaAeronaveActiva(g, 10, h - 72);
 
-            // 9. Dibujar Overlay de Profiling, Big-O y Telemetría Cliente-Servidor (Tecla F3)
+            // 15. Dibujar Overlay de Profiling, Big-O y Telemetría Cliente-Servidor (Tecla F3)
             if (_mostrarHudProfiling && _naveJugador != null)
             {
                 _profiler.DibujarHudProfiling(g, _gestorRed, _naveJugador, Math.Max(10, w - 288), 10);
             }
 
-            // 10. Banner de Fin de Misión (Victoria / Derrota)
+            // 16. Banner de Fin de Misión (Victoria / Derrota)
             if (_juegoTerminado)
             {
                 DibujarBannerResultado(g, w, h);
@@ -919,14 +1028,14 @@ namespace CondorTactico
         {
             if (_naveJugador == null) return;
 
-            int boxW = 520;
+            int boxW = 560;
             int boxH = 60;
             g.FillRectangle(RecursosGraficosHud.BrochaFichaFondo, x, y, boxW, boxH);
             g.DrawRectangle(RecursosGraficosHud.PlumaFichaBorde, x, y, boxW, boxH);
 
             g.DrawString($"AERONAVE ACTIVA: {_naveJugador.NombreModelo} [{_naveJugador.Matricula}]", RecursosGraficosHud.FuenteFichaTitulo, RecursosGraficosHud.BrochaCian, x + 8, y + 6);
             g.DrawString(_naveJugador.ObtenerFichaTecnica(), RecursosGraficosHud.FuenteFichaTexto, RecursosGraficosHud.BrochaBlanco, x + 8, y + 23);
-            g.DrawString("CONTROLES: [Flechas/WASD] Volar | [Enter/Espacio] Disparar | [1] B-2 Spirit | [2] F-35A | [F3] HUD Profiling", RecursosGraficosHud.FuenteFichaTexto, RecursosGraficosHud.BrochaBlanco, x + 8, y + 40);
+            g.DrawString("CONTROLES: [WASD/Flechas] Volar | [Enter/Espacio] Disparo | [1/2] Naves | [H] HUD Militar | [M] Audio | [F3] Profiling", RecursosGraficosHud.FuenteFichaTexto, RecursosGraficosHud.BrochaBlanco, x + 8, y + 40);
         }
 
         private void DibujarBannerResultado(Graphics g, int w, int h)
@@ -1051,6 +1160,16 @@ namespace CondorTactico
             {
                 string ruta = _profiler.ExportarReporteMetricas(_gestorRed, _naveJugador);
                 toolStripStatusLabel1.Text = $"Reporte guardado: {Path.GetFileName(ruta)}";
+            }
+            else if (e.KeyCode == Keys.H)
+            {
+                _hudMilitar.AlternarModo();
+                toolStripStatusLabel1.Text = $"HUD Militar: {_hudMilitar.ModoActual}";
+            }
+            else if (e.KeyCode == Keys.M)
+            {
+                SintetizadorAudioTactico.AlternarAudio();
+                toolStripStatusLabel1.Text = SintetizadorAudioTactico.AudioHabilitado ? "Audio táctico: ACTIVADO" : "Audio táctico: SILENCIADO";
             }
             else if (e.KeyCode == Keys.R)
             {

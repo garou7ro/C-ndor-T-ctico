@@ -40,10 +40,13 @@ Incorpora un motor gráfico vectorial procedimental con suavizado bicúbico (**4
 | **Resources**| [`CondorTactico/Resources/RecursoGrafico.cs`](./CondorTactico/Resources/RecursoGrafico.cs) | Contenedor de texturas gestionadas con marcas de último acceso para LRU. |
 | **Graphics** | [`CondorTactico/Graphics/CacheSpritesAeronaves.cs`](./CondorTactico/Graphics/CacheSpritesAeronaves.cs) | **Caché multihilo (`Parallel.ForEach`)** de sprites vectoriales 3D pre-rotados con reporte de progreso en tiempo real. |
 | **Graphics** | [`CondorTactico/Graphics/RecursosGraficosHud.cs`](./CondorTactico/Graphics/RecursosGraficosHud.cs) | **Paleta GDI+ precargada** (fuentes, brochas, plumas y fondo estratosférico PArgb) para cero asignaciones por frame. |
+| **Graphics** | [`CondorTactico/Graphics/EfectosVisualesCombate.cs`](./CondorTactico/Graphics/EfectosVisualesCombate.cs) | **Motor de FX cinemáticos**: Screen Shake por trauma cuadrático, ondas expansivas ópticas, destellos atmosféricos, sombras pseudo-3D, vórtices alares y casquillos de 20mm. |
+| **Graphics** | [`CondorTactico/Graphics/HudTacticoMilitar.cs`](./CondorTactico/Graphics/HudTacticoMilitar.cs) | **HUD militar holográfico de 5ª gen** (F-35 / B-2): horizonte artificial, cabeceo/alabeo, FPM, radar AESA, retícula predictiva PIPER y cintas de rumbo/altitud. |
 | **Graphics** | [`CondorTactico/Graphics/B2SpiritModel.cs`](./CondorTactico/Graphics/B2SpiritModel.cs) | Modelo vectorial procedimental fotorrealista del B-2 Spirit AF 82-1071 y misil AGM-158 con 4x SSAA. |
 | **Graphics** | [`CondorTactico/Graphics/F35Model.cs`](./CondorTactico/Graphics/F35Model.cs) | Modelo vectorial procedimental del caza F-35A y misil AIM-120 con 4x SSAA. |
 | **Graphics** | [`CondorTactico/Graphics/ParticulaCombate.cs`](./CondorTactico/Graphics/ParticulaCombate.cs) | Estructura de valor (*struct*) para estelas de postcombustión y explosiones aéreas sin recolector de basura (cero GC). |
 | **Graphics** | [`CondorTactico/Graphics/TextoFlotanteImpacto.cs`](./CondorTactico/Graphics/TextoFlotanteImpacto.cs) | Textos flotantes dinámicos de daño crítico ("impact -10" / "impact -1"). |
+| **Audio**    | [`CondorTactico/Audio/SintetizadorAudioTactico.cs`](./CondorTactico/Audio/SintetizadorAudioTactico.cs) | **Sintetizador de audio procedural en memoria** (PCM 16-bit): cañón Vulcan 20mm, misiles, explosiones, alertas de lock y estampido sónico. |
 | **Networking**| [`CondorTactico/Networking/RedClienteServidor.cs`](./CondorTactico/Networking/RedClienteServidor.cs) | Sockets UDP no bloqueantes (`GestorRedClienteServidor`) y DTO de serialización compacta `PaqueteRedAeronave`. |
 | **Diagnostics**| [`CondorTactico/Diagnostics/ProfilerMotor.cs`](./CondorTactico/Diagnostics/ProfilerMotor.cs) | Instrumentación de alta precisión (`Stopwatch`), telemetría de CPU en microsegundos, RAM, GC y exportador de informes (`F4`). |
 
@@ -58,6 +61,8 @@ Incorpora un motor gráfico vectorial procedimental con suavizado bicúbico (**4
 | **Aeronave B-2 Spirit** | `1` o Botón Superior | Selecciona el bombardero furtivo B-2 Spirit AF 82-1071 en tiempo real. |
 | **Aeronave F-35A** | `2` o Botón Superior | Selecciona el caza supersónico F-35A Lightning II en tiempo real. |
 | **Escolta de Apoyo** | Botón `➕ ESCOLTA` | Despliega una aeronave adicional aliada o rival en formación de combate. |
+| **HUD Militar Holográfico** | `H` | Conmuta modos de visualización: Cabina de Vidrio Completa, Retícula Táctica Mínima o Desactivado. |
+| **Audio Táctico Militar** | `M` | Activa o silencia el sintetizador de audio en memoria. |
 | **HUD de Telemetría** | `F3` | Conmuta el panel en vivo de métricas (FPS, CPU $\mu\text{s}$, RAM, Big-O, RTT). |
 | **Exportar Métricas** | `F4` | Genera un archivo de informe de rendimiento en disco (`reporte_profiling_metricas.txt`). |
 | **Reiniciar Misión** | `R` o Botón `🚀 NUEVA MISIÓN` | Reinicia el espacio aéreo y redespliega las aeronaves. |
@@ -81,7 +86,33 @@ dotnet run --project CondorTactico/CondorTactico.csproj
 
 ## 📝 Registro de Estado y Avances del Proyecto
 
-### Versión 3.3.0 (Versión Actual)
+### Versión 3.4.0 (Versión Actual)
+- **Motor de Efectos Cinemáticos de Combate (`EfectosVisualesCombate.cs`)**:
+  - **Screen Shake por Trauma Cuadrático**: sacudida cinematográfica de pantalla que simula retroceso balístico de cañón de 20mm y detonaciones aéreas sin afectar la estabilidad de las tarjetas estáticas del HUD.
+  - **Sombras Atmosféricas Pseudo-3D**: proyección de siluetas de aeronaves sobre el manto estratosférico con perspectiva de altitud y cizalladura por alabeo ($\pm15^\circ$).
+  - **Ondas Expansivas y Destellos Ópticos**: anillos supersónicos expansivos con halo refractivo y destello lumínico en toda la escena durante impactos críticos y destrucción de cazas.
+  - **Física de Casquillos de Munición**: eyección lateral de casquillos de 20mm con velocidad tangencial, gravedad y giro angular.
+  - **Vórtices Alares y Humo de Daño**: condensación aerodinámica en puntas de ala durante giros y estelas de humo negro/ignición cuando la salud desciende del 50% y 25%.
+- **HUD Militar Holográfico de 5ª Generación (`HudTacticoMilitar.cs`)**:
+  - Simbología de cabina de cristal de cazas modernos (F-35 Gen 5 / B-2 Spirit):
+    - Línea de horizonte artificial y escala de cabeceo/alabeo ($\pm10^\circ$).
+    - Vector de trayectoria de vuelo (Flight Path Marker - FPM).
+    - Cono de barrido frontal de radar AESA de 55°.
+    - Retícula predictiva de impacto (PIPER) calculando tiempo de vuelo y deflexión balística.
+    - Anillos de enganche *Radar Lock* con telemetría de distancia y velocidad de aproximación.
+    - Cintas tácticas de rumbo militar ($000^\circ - 360^\circ$), velocidad (KTS) y altitud (FT).
+    - Conmutable con la tecla `H`.
+- **Sintetizador de Audio Militar Procedural en Memoria (`SintetizadorAudioTactico.cs`)**:
+  - Generación en tiempo real de formas de onda PCM mono 16-bit 22.05kHz (RIFF WAVE) 100% nativo C# sin archivos ni librerías externas.
+  - Efectos sintetizados: ráfaga de cañón rotativo Vulcan 20mm, ignición y aceleración de misiles AGM-158/AIM-120, explosiones subsónicas con saturación analógica, alertas tácticas de radar lock, impacto metálico y estampido sónico (*sonic boom*).
+  - Conmutable con la tecla `M`.
+- **Evolución Cinemática de la Pantalla de Carga (`PantallaCarga.cs`)**:
+  - Cintas ondulantes de aurora austral estratosférica en cian, esmeralda y violeta sobre la cordillera andina.
+  - Partículas de viento andino de gran altitud (cristales de hielo y polvo estelar) en deriva horizontal continua.
+  - Terminal de diagnóstico de aviónica militar con códigos de telemetría en tiempo real.
+  - Estampido sónico procedural al confirmar el despegue.
+
+### Versión 3.3.0
 - **Pantalla de Carga e Introducción Táctica Cinematográfica (`PantallaCarga.cs`)**:
   - Renderizado a 60 FPS con paralaje multicapa: cielo nocturno andino, constelaciones parpadeantes, siluetas de montañas, nubes en desplazamiento y emblema del Cóndor con barrido de radar.
   - Flyby dinámico de cazas B-2 Spirit y F-35A con estelas de condensación vectoriales.

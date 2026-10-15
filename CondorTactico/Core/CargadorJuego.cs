@@ -69,9 +69,10 @@ namespace CondorTactico
         public CargadorJuego()
         {
             _etapas.Add(new EtapaCarga("Inicializando núcleo del motor", 4, EtapaNucleo));
-            _etapas.Add(new EtapaCarga("Rasterizando flota vectorial 4x SSAA", 58, EtapaSprites));
+            _etapas.Add(new EtapaCarga("Rasterizando flota vectorial 4x SSAA", 50, EtapaSprites));
             _etapas.Add(new EtapaCarga("Cargando tipografías y paleta táctica", 6, EtapaPaleta));
             _etapas.Add(new EtapaCarga("Pre-renderizando cielo estratosférico", 6, EtapaFondo));
+            _etapas.Add(new EtapaCarga("Sintetizando efectos de audio y HUD holográfico", 8, EtapaAudioYHud));
             _etapas.Add(new EtapaCarga("Precalentando física, colisiones y render (JIT)", 14, EtapaPrecalentamiento));
             _etapas.Add(new EtapaCarga("Verificando enlace de red UDP", 6, EtapaRed));
             _etapas.Add(new EtapaCarga("Optimizando memoria y recolector de basura", 6, EtapaMemoria));
@@ -156,6 +157,17 @@ namespace CondorTactico
                 Math.Max(1, _tamanoVentana.Height - 44 - 26 - 39));
             RecursosGraficosHud.PrecalentarFondo(tamanoLienzo);
             reportar(1.0, $"Cielo {tamanoLienzo.Width}x{tamanoLienzo.Height} en caché");
+        }
+
+        private static void EtapaAudioYHud(Action<double, string> reportar)
+        {
+            reportar(0.3, "Sintetizando formas de onda PCM 16-bit (Vulcan 20mm, Misiles, Explosiones)");
+            Audio.SintetizadorAudioTactico.Inicializar();
+
+            reportar(0.8, "Precalentando HUD holográfico militar (F-35 Gen 5 / B-2)");
+            GraphicsEffects.HudTacticoMilitar.AsegurarFuentes();
+
+            reportar(1.0, "Subsistema audiovisual listo (cero dependencias externas)");
         }
 
         private static void EtapaPrecalentamiento(Action<double, string> reportar)

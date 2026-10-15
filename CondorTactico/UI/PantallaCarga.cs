@@ -18,6 +18,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Threading;
 using System.Windows.Forms;
+using CondorTactico.Audio;
 
 namespace CondorTactico.UI
 {
@@ -86,8 +87,10 @@ namespace CondorTactico.UI
         private struct Estrella { public float X, Y, Fase, Velocidad, Tamano; }
         private struct Nube { public float X, Y, Ancho, Alto, Velocidad; public int Alfa; }
         private struct Estela { public float X, Y, Vida, Radio; public Color Color; }
+        private struct ParticulaViento { public float X, Y, Velocidad, Tamano, Fase; }
         private Estrella[] _estrellas = Array.Empty<Estrella>();
         private Nube[] _nubes = Array.Empty<Nube>();
+        private ParticulaViento[] _particulasViento = Array.Empty<ParticulaViento>();
         private readonly List<Estela> _estelas = new List<Estela>(256);
 
         // Recursos GDI+ propios de la pantalla (se liberan en Dispose)
@@ -227,6 +230,7 @@ namespace CondorTactico.UI
             {
                 _cerrando = true;
                 _instanteCierre = Seg;
+                SintetizadorAudioTactico.ReproducirSonicBoom();
             }
         }
 
@@ -254,6 +258,7 @@ namespace CondorTactico.UI
             {
                 _cerrando = true;
                 _instanteCierre = t;
+                SintetizadorAudioTactico.ReproducirSonicBoom();
             }
 
             // Opacidad (fade-in / fade-out)
@@ -278,6 +283,16 @@ namespace CondorTactico.UI
             {
                 _nubes[i].X += _nubes[i].Velocidad * dt;
                 if (_nubes[i].X > W + 40) _nubes[i].X = -_nubes[i].Ancho - 40;
+            }
+
+            for (int i = 0; i < _particulasViento.Length; i++)
+            {
+                _particulasViento[i].X += _particulasViento[i].Velocidad * dt;
+                if (_particulasViento[i].X > W + 20)
+                {
+                    _particulasViento[i].X = -20f;
+                    _particulasViento[i].Y = H * (0.25f + (float)_rng.NextDouble() * 0.45f);
+                }
             }
 
             ActualizarEstelas(dt);
@@ -321,6 +336,8 @@ namespace CondorTactico.UI
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
             DibujarEstrellas(g, t);
+            DibujarAuroraAustral(g, t);
+            DibujarParticulasViento(g, t);
             DibujarNubes(g);
             DibujarDespegue(g, t);
 
@@ -335,6 +352,7 @@ namespace CondorTactico.UI
             DibujarTitulo(g, t);
             DibujarPanelProgreso(g, t);
             DibujarBitacora(g, t);
+            DibujarTerminalDiagnosticoAvionica(g, t);
             DibujarConsejo(g, t);
             DibujarMarco(g, t);
         }
@@ -348,6 +366,65 @@ namespace CondorTactico.UI
                 _brochaDinamica.Color = Color.FromArgb(alfa, 220, 235, 255);
                 g.FillEllipse(_brochaDinamica, s.X, s.Y, s.Tamano, s.Tamano);
             }
+        }
+
+        private void DibujarAuroraAustral(Graphics g, double t)
+        {
+            // Cintas ondulantes de aurora estratosférica sobre la cordillera andina
+            float yBase = H * 0.48f;
+            _plumaDinamica.Width = 3.2f;
+
+            for (int cinta = 0; cinta < 3; cinta++)
+            {
+                Color cAurora = cinta switch
+                {
+                    0 => Color.FromArgb(28, 0, 220, 180),
+                    1 => Color.FromArgb(22, 60, 140, 255),
+                    _ => Color.FromArgb(18, 170, 70, 255)
+                };
+                _plumaDinamica.Color = cAurora;
+
+                PointF[] puntos = new PointF[9];
+                for (int i = 0; i < puntos.Length; i++)
+                {
+                    float px = (W * i) / (float)(puntos.Length - 1);
+                    float onda1 = (float)Math.Sin((t * 0.8) + (i * 0.65) + (cinta * 1.2)) * 24f;
+                    float onda2 = (float)Math.Cos((t * 0.4) + (i * 0.4)) * 12f;
+                    puntos[i] = new PointF(px, yBase + onda1 + onda2 + (cinta * 14f));
+                }
+                g.DrawCurve(_plumaDinamica, puntos, 0.5f);
+            }
+        }
+
+        private void DibujarParticulasViento(Graphics g, double t)
+        {
+            for (int i = 0; i < _particulasViento.Length; i++)
+            {
+                ParticulaViento p = _particulasViento[i];
+                float y = p.Y + (float)Math.Sin((t * 2.0) + p.Fase) * 4f;
+                int alfa = (int)(90 + 90 * Math.Sin((t * 3.0) + p.Fase));
+                _brochaDinamica.Color = Color.FromArgb(Math.Clamp(alfa, 0, 255), 200, 235, 255);
+                g.FillEllipse(_brochaDinamica, p.X, y, p.Tamano, p.Tamano);
+            }
+        }
+
+        private void DibujarTerminalDiagnosticoAvionica(Graphics g, double t)
+        {
+            float tx = W * 0.045f;
+            float ty = H * 0.77f;
+
+            string[] diagnosticos = new[]
+            {
+                "[AESA-APG81] ARRASTRE DE HAZ ACTIVO · 120 NM",
+                "[FLY-BY-WIRE] 4 CANALES REDUNDANTES · NOMINAL",
+                "[RAM-STEALTH] COEFICIENTE ABSORCIÓN: 99.8%",
+                "[LINK-16] ENLACE TÁCTICO CIFRADO · SINCRONIZADO",
+                "[JASSM-ER/AIM120] BAHÍA DE ARMAS ARMADA"
+            };
+
+            int lineaVisible = (int)(t * 1.6) % diagnosticos.Length;
+            _brochaDinamica.Color = Color.FromArgb(180, 0, 230, 180);
+            g.DrawString($"AVIÓNICA: {diagnosticos[lineaVisible]}", _fMono, _brochaDinamica, tx, ty);
         }
 
         private void DibujarNubes(Graphics g)
@@ -684,6 +761,19 @@ namespace CondorTactico.UI
                     Alto = ancho * 0.18f,
                     Velocidad = 6f + (float)_rng.NextDouble() * 14f,
                     Alfa = 10 + _rng.Next(16)
+                };
+            }
+
+            _particulasViento = new ParticulaViento[55];
+            for (int i = 0; i < _particulasViento.Length; i++)
+            {
+                _particulasViento[i] = new ParticulaViento
+                {
+                    X = (float)_rng.NextDouble() * W,
+                    Y = H * (0.25f + (float)_rng.NextDouble() * 0.45f),
+                    Velocidad = 22f + (float)_rng.NextDouble() * 55f,
+                    Tamano = 1.0f + (float)_rng.NextDouble() * 1.8f,
+                    Fase = (float)_rng.NextDouble() * 6.28f
                 };
             }
         }
