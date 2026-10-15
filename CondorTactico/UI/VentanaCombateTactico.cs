@@ -79,25 +79,38 @@ namespace CondorTactico
         private int tiempoImpacto = 0;
         private int tiempoImpactoNavex = 0;
 
-        public VentanaCombateTactico()
+        public VentanaCombateTactico() : this(null)
+        {
+        }
+
+        public VentanaCombateTactico(ResultadoCarga? resultado)
         {
             InitializeComponent();
-            Iniciar();
+            Iniciar(resultado);
         }
 
         // =========================================================================
         // INICIALIZACIÓN DEL FORMULARIO Y ARQUITECTURA CLIENTE-SERVIDOR
         // =========================================================================
-        public void Iniciar()
+        public void Iniciar(ResultadoCarga? resultado = null)
         {
-            // Pre-cargar en O(1) todos los modelos vectoriales 3D (F-35 Lightning II y B-2 Spirit AF 82-1071)
-            CacheSpritesAeronaves.InicializarCache();
+            // Asegurar que el caché multihilo de sprites vectoriales 3D esté listo
+            if (!CacheSpritesAeronaves.EstaInicializado)
+            {
+                CacheSpritesAeronaves.InicializarCache();
+            }
+
+            // Asegurar que la paleta de recursos GDI+ precargados esté lista (cero asignaciones por frame)
+            if (!RecursosGraficosHud.EstaInicializado)
+            {
+                RecursosGraficosHud.Inicializar();
+            }
 
             this.FormBorderStyle = FormBorderStyle.Sizable;
             this.MinimumSize = new Size(860, 680);
-            this.Size = new Size(980, 740);
+            this.Size = resultado?.TamanoVentanaPrincipal ?? ConfiguracionPantalla.CalcularTamanoVentanaPrincipal();
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.Text = "CÓNDOR TÁCTICO v3.1 | SIMULADOR DE COMBATE AÉREO 2D | UNAJ | B-2 SPIRIT & F-35";
+            this.Text = "CÓNDOR TÁCTICO v3.3 | SIMULADOR DE COMBATE AÉREO 2D | UNAJ | B-2 SPIRIT & F-35";
             this.DoubleBuffered = true;
             this.KeyPreview = true;
 
@@ -826,39 +839,29 @@ namespace CondorTactico
             int w = contiene.Width;
             int h = contiene.Height;
 
-            // 1. Cielo estratosférico inspirado en la fotografía real del B-2 Spirit (AF 82-1071)
-            using (LinearGradientBrush bCielo = new LinearGradientBrush(
-                new Rectangle(0, 0, Math.Max(1, w), Math.Max(1, h)),
-                Color.FromArgb(255, 18, 48, 86),
-                Color.FromArgb(255, 72, 136, 192),
-                LinearGradientMode.Vertical))
-            {
-                g.FillRectangle(bCielo, 0, 0, w, h);
-            }
+            // 1. Cielo estratosférico pre-renderizado (cero asignaciones GDI+ por frame)
+            Bitmap fondoCielo = RecursosGraficosHud.ObtenerFondoCielo(w, h);
+            g.DrawImageUnscaled(fondoCielo, 0, 0);
 
             // 2. Retícula táctica de radar de baja opacidad
-            using (Pen pRadar = new Pen(Color.FromArgb(22, 140, 220, 255), 1f))
+            Pen pRadar = RecursosGraficosHud.PlumaRadar;
+            for (int rx = 0; rx < w; rx += 72)
             {
-                for (int rx = 0; rx < w; rx += 72)
-                {
-                    g.DrawLine(pRadar, rx, 0, rx, h);
-                }
-                for (float ry = _offsetRadarY; ry < h; ry += 72f)
-                {
-                    g.DrawLine(pRadar, 0, ry, w, ry);
-                }
+                g.DrawLine(pRadar, rx, 0, rx, h);
+            }
+            for (float ry = _offsetRadarY; ry < h; ry += 72f)
+            {
+                g.DrawLine(pRadar, 0, ry, w, ry);
             }
 
             // 3. Nubes estratosféricas semitransparentes en paralaje
-            using (SolidBrush bNube = new SolidBrush(Color.FromArgb(28, 235, 245, 255)))
+            SolidBrush bNube = RecursosGraficosHud.BrochaNube;
+            for (int i = 0; i < _nubesEstratosfera.Length; i++)
             {
-                for (int i = 0; i < _nubesEstratosfera.Length; i++)
-                {
-                    PointF n = _nubesEstratosfera[i];
-                    float nw = 90 + (i % 4) * 35;
-                    float nh = 22 + (i % 3) * 10;
-                    g.FillEllipse(bNube, n.X, n.Y, nw, nh);
-                }
+                PointF n = _nubesEstratosfera[i];
+                float nw = 90 + (i % 4) * 35;
+                float nh = 22 + (i % 3) * 10;
+                g.FillEllipse(bNube, n.X, n.Y, nw, nh);
             }
 
             // 4. Dibujar Proyectiles activos
@@ -873,30 +876,25 @@ namespace CondorTactico
                 _aeronaves[i].Dibujar(g);
             }
 
-            // 6. Dibujar Partículas de Combate y Postcombustión
+            // 6. Dibujar Partículas de Combate y Postcombustión (usando brocha dinámica mutable)
+            SolidBrush bPart = RecursosGraficosHud.BrochaDinamica;
             for (int i = 0; i < _particulas.Count; i++)
             {
                 ParticulaCombate pt = _particulas[i];
                 int alpha = Math.Clamp((int)(255f * pt.VidaRestante / Math.Max(1, pt.VidaInicial)), 0, 255);
-                using (SolidBrush bPart = new SolidBrush(Color.FromArgb(alpha, pt.ColorBase)))
-                {
-                    g.FillEllipse(bPart, pt.X - pt.Radio, pt.Y - pt.Radio, pt.Radio * 2f, pt.Radio * 2f);
-                }
+                bPart.Color = Color.FromArgb(alpha, pt.ColorBase);
+                g.FillEllipse(bPart, pt.X - pt.Radio, pt.Y - pt.Radio, pt.Radio * 2f, pt.Radio * 2f);
             }
 
             // 7. Dibujar Textos Flotantes de Impacto Geométrico ("impact -10")
-            using (Font fImpacto = new Font("Segoe UI", 10.5f, FontStyle.Bold))
+            Font fImpacto = RecursosGraficosHud.FuenteImpacto;
+            SolidBrush bSombra = RecursosGraficosHud.BrochaSombra;
+            for (int i = 0; i < _textosImpacto.Count; i++)
             {
-                for (int i = 0; i < _textosImpacto.Count; i++)
-                {
-                    TextoFlotanteImpacto ti = _textosImpacto[i];
-                    using (SolidBrush bSombra = new SolidBrush(Color.FromArgb(190, 0, 0, 0)))
-                    using (SolidBrush bColor = new SolidBrush(ti.ColorTexto))
-                    {
-                        g.DrawString(ti.Texto, fImpacto, bSombra, ti.X + 1, ti.Y + 1);
-                        g.DrawString(ti.Texto, fImpacto, bColor, ti.X, ti.Y);
-                    }
-                }
+                TextoFlotanteImpacto ti = _textosImpacto[i];
+                g.DrawString(ti.Texto, fImpacto, bSombra, ti.X + 1, ti.Y + 1);
+                bPart.Color = ti.ColorTexto;
+                g.DrawString(ti.Texto, fImpacto, bPart, ti.X, ti.Y);
             }
 
             // 8. Dibujar Tarjeta Táctica Inferior Izquierda de la Aeronave Activa
@@ -923,22 +921,12 @@ namespace CondorTactico
 
             int boxW = 520;
             int boxH = 60;
-            using (SolidBrush bBg = new SolidBrush(Color.FromArgb(185, 10, 18, 30)))
-            using (Pen pBorder = new Pen(Color.FromArgb(160, 60, 195, 255), 1f))
-            {
-                g.FillRectangle(bBg, x, y, boxW, boxH);
-                g.DrawRectangle(pBorder, x, y, boxW, boxH);
-            }
+            g.FillRectangle(RecursosGraficosHud.BrochaFichaFondo, x, y, boxW, boxH);
+            g.DrawRectangle(RecursosGraficosHud.PlumaFichaBorde, x, y, boxW, boxH);
 
-            using (Font fBold = new Font("Consolas", 8.2f, FontStyle.Bold))
-            using (Font fReg = new Font("Consolas", 7.5f, FontStyle.Regular))
-            using (SolidBrush bCian = new SolidBrush(Color.FromArgb(255, 80, 230, 255)))
-            using (SolidBrush bBlanco = new SolidBrush(Color.FromArgb(240, 235, 245, 255)))
-            {
-                g.DrawString($"AERONAVE ACTIVA: {_naveJugador.NombreModelo} [{_naveJugador.Matricula}]", fBold, bCian, x + 8, y + 6);
-                g.DrawString(_naveJugador.ObtenerFichaTecnica(), fReg, bBlanco, x + 8, y + 23);
-                g.DrawString("CONTROLES: [Flechas/WASD] Volar | [Enter/Espacio] Disparar | [1] B-2 Spirit | [2] F-35A | [F3] HUD Profiling", fReg, bBlanco, x + 8, y + 40);
-            }
+            g.DrawString($"AERONAVE ACTIVA: {_naveJugador.NombreModelo} [{_naveJugador.Matricula}]", RecursosGraficosHud.FuenteFichaTitulo, RecursosGraficosHud.BrochaCian, x + 8, y + 6);
+            g.DrawString(_naveJugador.ObtenerFichaTecnica(), RecursosGraficosHud.FuenteFichaTexto, RecursosGraficosHud.BrochaBlanco, x + 8, y + 23);
+            g.DrawString("CONTROLES: [Flechas/WASD] Volar | [Enter/Espacio] Disparar | [1] B-2 Spirit | [2] F-35A | [F3] HUD Profiling", RecursosGraficosHud.FuenteFichaTexto, RecursosGraficosHud.BrochaBlanco, x + 8, y + 40);
         }
 
         private void DibujarBannerResultado(Graphics g, int w, int h)
@@ -948,22 +936,15 @@ namespace CondorTactico
             int bx = (w - bw) / 2;
             int by = (h - bh) / 2;
 
-            using (SolidBrush bFondo = new SolidBrush(Color.FromArgb(225, 10, 16, 28)))
-            using (Pen pBorde = new Pen(_victoriaJugador ? Color.DeepSkyBlue : Color.Crimson, 2.5f))
-            {
-                g.FillRectangle(bFondo, bx, by, bw, bh);
-                g.DrawRectangle(pBorde, bx, by, bw, bh);
-            }
+            g.FillRectangle(RecursosGraficosHud.BrochaBannerFondo, bx, by, bw, bh);
+            g.DrawRectangle(_victoriaJugador ? RecursosGraficosHud.PlumaBannerVictoria : RecursosGraficosHud.PlumaBannerDerrota, bx, by, bw, bh);
 
-            using (Font fTitulo = new Font("Segoe UI", 18f, FontStyle.Bold))
-            using (Font fSub = new Font("Consolas", 9.5f, FontStyle.Bold))
-            using (SolidBrush bTitulo = new SolidBrush(_victoriaJugador ? Color.FromArgb(255, 70, 230, 255) : Color.FromArgb(255, 255, 80, 80)))
-            using (SolidBrush bBlanco = new SolidBrush(Color.White))
-            {
-                g.DrawString(_mensajeResultado, fTitulo, bTitulo, bx + 55, by + 22);
-                g.DrawString($"Puntaje Táctico: {_naveJugador.PuntajeTactico} pts | Bajas: {_naveJugador.BajasConfirmadas}", fSub, bBlanco, bx + 55, by + 66);
-                g.DrawString("Presiona [R] o el botón [🚀 NUEVA MISIÓN] para reiniciar", fSub, bBlanco, bx + 28, by + 92);
-            }
+            SolidBrush bTitulo = RecursosGraficosHud.BrochaDinamica;
+            bTitulo.Color = _victoriaJugador ? Color.FromArgb(255, 70, 230, 255) : Color.FromArgb(255, 255, 80, 80);
+
+            g.DrawString(_mensajeResultado, RecursosGraficosHud.FuenteBannerTitulo, bTitulo, bx + 55, by + 22);
+            g.DrawString($"Puntaje Táctico: {_naveJugador.PuntajeTactico} pts | Bajas: {_naveJugador.BajasConfirmadas}", RecursosGraficosHud.FuenteBannerSub, RecursosGraficosHud.BrochaBlanco, bx + 55, by + 66);
+            g.DrawString("Presiona [R] o el botón [🚀 NUEVA MISIÓN] para reiniciar", RecursosGraficosHud.FuenteBannerSub, RecursosGraficosHud.BrochaBlanco, bx + 28, by + 92);
         }
 
         // =========================================================================

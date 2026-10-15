@@ -1,4 +1,4 @@
-﻿// ==============================================================================
+// ==============================================================================
 // PROYECTO: CÓNDOR TÁCTICO (SIMULADOR DE COMBATE AÉREO 2D)
 // AUTORES:
 //   - RONAL ABELIN LARICO CCASO
@@ -12,6 +12,7 @@
 
 using System;
 using System.Windows.Forms;
+using CondorTactico.UI;
 
 namespace CondorTactico
 {
@@ -24,7 +25,19 @@ namespace CondorTactico
         static void Main()
         {
             ApplicationConfiguration.Initialize();
-            Application.Run(new VentanaCombateTactico());
+
+            // Desplegar la pantalla de carga e introducción táctica (60 FPS, paralaje, precalentamiento)
+            using var pantallaCarga = new PantallaCarga();
+            DialogResult res = pantallaCarga.ShowDialog();
+
+            if (res != DialogResult.OK || pantallaCarga.Resultado == null)
+            {
+                // El usuario canceló la carga (Escape) o cerró la ventana
+                return;
+            }
+
+            // Iniciar el simulador de combate táctico con los recursos precargados
+            Application.Run(new VentanaCombateTactico(pantallaCarga.Resultado));
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿// ==============================================================================
+// ==============================================================================
 // PROYECTO: CÓNDOR TÁCTICO (SIMULADOR DE COMBATE AÉREO 2D)
 // AUTORES:
 //   - RONAL ABELIN LARICO CCASO
@@ -49,58 +49,99 @@ namespace CondorTactico
 
         private static readonly Dictionary<ClaveSprite, Bitmap> _cacheNaves = new Dictionary<ClaveSprite, Bitmap>();
         private static readonly Dictionary<(TipoAeronave, bool), Bitmap> _cacheMisiles = new Dictionary<(TipoAeronave, bool), Bitmap>();
-        private static bool _inicializado = false;
+        private static readonly object _candado = new object();
+        private static volatile bool _inicializado = false;
+
+        private static readonly int[] _angulos = { -15, 0, 15 };
+
+        /// <summary>Indica si todos los sprites ya están disponibles para lectura concurrente segura.</summary>
+        public static bool EstaInicializado => _inicializado;
+
+        /// <summary>Número total de unidades de trabajo (variantes base de nave + misiles) que reporta el progreso.</summary>
+        public static int TotalUnidadesTrabajo
+        {
+            get
+            {
+                int tipos = Enum.GetValues(typeof(TipoAeronave)).Length;
+                return tipos * 2 * 2 + tipos * 2; // (tipo x bando x aceleración) + (tipo x bando) misiles
+            }
+        }
 
         /// <summary>
-        /// Procedimiento de pre-carga que genera todos los estados visuales de F-35 y B-2 Spirit una única vez.
+        /// Pre-carga paralela de todos los estados visuales de F-35 y B-2 Spirit (una única vez, thread-safe).
+        /// Cada combinación se rasteriza en un hilo del ThreadPool con su propio contexto GDI+ independiente.
         /// </summary>
-        public static void InicializarCache()
+        /// <param name="progreso">Callback opcional (completados, total, descripción) invocado desde hilos de fondo.</param>
+        public static void InicializarCache(Action<int, int, string>? progreso = null)
         {
             if (_inicializado) return;
 
-            int[] angulos = new int[] { -15, 0, 15 };
-            bool[] estadosRival = new bool[] { false, true };
-            bool[] estadosAcel = new bool[] { false, true };
-
-            foreach (TipoAeronave tipo in Enum.GetValues(typeof(TipoAeronave)))
+            lock (_candado)
             {
-                int ancho = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 132 : 84;
-                int alto = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 92 : 118;
+                if (_inicializado) return;
 
-                foreach (bool esRival in estadosRival)
+                var trabajos = new List<(TipoAeronave tipo, bool esRival, bool? acel)>();
+                foreach (TipoAeronave tipo in Enum.GetValues(typeof(TipoAeronave)))
                 {
-                    int rotacionBase = esRival ? 180 : 0;
-                    foreach (bool acel in estadosAcel)
+                    foreach (bool esRival in new[] { false, true })
                     {
-                        using (Bitmap bmpBase = (tipo == TipoAeronave.B2_Spirit_Stealth)
-                            ? B2SpiritModel.DibujarB2Spirit(ancho, alto, rotacionBase, esRival, acel, 4)
-                            : F35Model.DibujarF35(ancho, alto, rotacionBase, esRival, acel, 4))
-                        {
-                            foreach (int ang in angulos)
-                            {
-                                ClaveSprite clave = new ClaveSprite(tipo, esRival, acel, ang);
-                                Bitmap bmpRotado = RotarBitmapAltaCalidad(bmpBase, ang);
-                                _cacheNaves[clave] = bmpRotado;
-
-                                // Integrar con el Gestor de Recursos Asíncrono para telemetría y ciclo de vida
-                                GestorRecursosAsincrono.Instancia.RegistrarRecursoListo(
-                                    new RecursoGrafico($"sprite_nave_{tipo}_{(esRival ? "rival" : "aliado")}_{(acel ? "acel" : "base")}_{ang}", bmpRotado));
-                            }
-                        }
+                        trabajos.Add((tipo, esRival, false));
+                        trabajos.Add((tipo, esRival, true));
+                        trabajos.Add((tipo, esRival, null)); // null = proyectil
                     }
+                }
 
-                    // Cachear también el proyectil correspondiente
-                    Bitmap bmpMisil = (tipo == TipoAeronave.B2_Spirit_Stealth)
-                        ? B2SpiritModel.DibujarMisilB2(20, 40, rotacionBase, esRival, 4)
-                        : F35Model.DibujarMisil(18, 38, rotacionBase, esRival, 4);
-                    _cacheMisiles[(tipo, esRival)] = bmpMisil;
+                int total = trabajos.Count;
+                int completados = 0;
 
+                System.Threading.Tasks.Parallel.ForEach(
+                    trabajos,
+                    new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1) },
+                    trabajo =>
+                    {
+                        string descripcion = GenerarVariante(trabajo.tipo, trabajo.esRival, trabajo.acel);
+                        int hechos = System.Threading.Interlocked.Increment(ref completados);
+                        progreso?.Invoke(hechos, total, descripcion);
+                    });
+
+                _inicializado = true;
+            }
+        }
+
+        private static string GenerarVariante(TipoAeronave tipo, bool esRival, bool? acel)
+        {
+            int rotacionBase = esRival ? 180 : 0;
+            string bando = esRival ? "rival" : "aliado";
+            string nombre = tipo == TipoAeronave.B2_Spirit_Stealth ? "B-2 Spirit" : "F-35A Lightning II";
+
+            if (acel == null)
+            {
+                Bitmap bmpMisil = (tipo == TipoAeronave.B2_Spirit_Stealth)
+                    ? B2SpiritModel.DibujarMisilB2(20, 40, rotacionBase, esRival, 4)
+                    : F35Model.DibujarMisil(18, 38, rotacionBase, esRival, 4);
+
+                lock (_cacheMisiles) _cacheMisiles[(tipo, esRival)] = bmpMisil;
+                GestorRecursosAsincrono.Instancia.RegistrarRecursoListo(new RecursoGrafico($"sprite_misil_{tipo}_{bando}", bmpMisil));
+                return $"Munición {(tipo == TipoAeronave.B2_Spirit_Stealth ? "AGM-158 JASSM" : "AIM-120 AMRAAM")} ({bando})";
+            }
+
+            int ancho = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 132 : 84;
+            int alto = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 92 : 118;
+
+            using (Bitmap bmpBase = (tipo == TipoAeronave.B2_Spirit_Stealth)
+                ? B2SpiritModel.DibujarB2Spirit(ancho, alto, rotacionBase, esRival, acel.Value, 4)
+                : F35Model.DibujarF35(ancho, alto, rotacionBase, esRival, acel.Value, 4))
+            {
+                foreach (int ang in _angulos)
+                {
+                    Bitmap bmpRotado = RotarBitmapAltaCalidad(bmpBase, ang);
+                    lock (_cacheNaves) _cacheNaves[new ClaveSprite(tipo, esRival, acel.Value, ang)] = bmpRotado;
                     GestorRecursosAsincrono.Instancia.RegistrarRecursoListo(
-                        new RecursoGrafico($"sprite_misil_{tipo}_{(esRival ? "rival" : "aliado")}", bmpMisil));
+                        new RecursoGrafico($"sprite_nave_{tipo}_{bando}_{(acel.Value ? "acel" : "base")}_{ang}", bmpRotado));
                 }
             }
 
-            _inicializado = true;
+            return $"{nombre} ({bando}{(acel.Value ? ", postcombustión" : "")})";
         }
 
         /// <summary>

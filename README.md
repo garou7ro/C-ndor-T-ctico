@@ -21,8 +21,10 @@ Incorpora un motor gráfico vectorial procedimental con suavizado bicúbico (**4
 | Directorio | Archivo | Responsabilidad Principal |
 | :--- | :--- | :--- |
 | **Raíz** | [`CondorTactico.slnx`](./CondorTactico.slnx) | Solución XML moderna de Visual Studio / .NET 8. |
-| **Proyecto** | [`CondorTactico/Program.cs`](./CondorTactico/Program.cs) | Punto de entrada del proceso (`Application.Run(new VentanaCombateTactico())`). |
-| **UI** | [`CondorTactico/UI/VentanaCombateTactico.cs`](./CondorTactico/UI/VentanaCombateTactico.cs) | **Ventana principal y Game Loop a 60 FPS** (Timer 16ms). Intercepción nativa de teclas (`WndProc`, `ProcessDialogKey`), física, colisiones y renderizado GDI+ con DoubleBuffering. |
+| **Proyecto** | [`CondorTactico/Program.cs`](./CondorTactico/Program.cs) | Punto de entrada: despliega `PantallaCarga` e inicia `VentanaCombateTactico(resultado)`. |
+| **Core** | [`CondorTactico/Core/CargadorJuego.cs`](./CondorTactico/Core/CargadorJuego.cs) | **Motor de arranque multietapa en segundo plano**: rasterización paralela, paleta GDI+, precalentamiento JIT, sockets UDP y GC `SustainedLowLatency`. |
+| **UI** | [`CondorTactico/UI/PantallaCarga.cs`](./CondorTactico/UI/PantallaCarga.cs) | **Pantalla de carga e introducción táctica a 60 FPS**: cielo andino en paralaje, estrellas, siluetas, barrido de radar, flyby de cazas y tips tácticos. |
+| **UI** | [`CondorTactico/UI/VentanaCombateTactico.cs`](./CondorTactico/UI/VentanaCombateTactico.cs) | **Ventana principal y Game Loop a 60 FPS** (Timer 16ms). Intercepción nativa de teclas (`WndProc`, `ProcessDialogKey`), física, colisiones y renderizado sin asignaciones GDI+. |
 | **UI** | [`CondorTactico/UI/LienzoTactico.cs`](./CondorTactico/UI/LienzoTactico.cs) | Control `PictureBox` especializado con `ControlStyles.Selectable`, `IsInputKey` para flechas/WASD y foco prioritario sin bloqueos. |
 | **UI** | [`CondorTactico/UI/VentanaConfiguracionRed.cs`](./CondorTactico/UI/VentanaConfiguracionRed.cs) | Subventana modal para enlace UDP: Servidor Host, Cliente Remoto o Modo Local, IP, Puerto y telemetría RTT. |
 | **UI** | [`CondorTactico/UI/VentanaAjustesMision.cs`](./CondorTactico/UI/VentanaAjustesMision.cs) | Subventana modal para configuración táctica: indicativo del piloto, selección de aeronave aliada (B-2 / F-35A), líderes rivales y escoltas. |
@@ -36,7 +38,8 @@ Incorpora un motor gráfico vectorial procedimental con suavizado bicúbico (**4
 | **Systems** | [`CondorTactico/Systems/GrillaEspacialColisiones.cs`](./CondorTactico/Systems/GrillaEspacialColisiones.cs) | **Particionamiento Espacial Hash $\mathcal{O}(N+K)$** en celdas de $72\times72\text{ px}$. Detección de impacto de 3 segmentos (alas $-1$, cabina crítica $-10$). |
 | **Resources**| [`CondorTactico/Resources/GestorRecursosAsincrono.cs`](./CondorTactico/Resources/GestorRecursosAsincrono.cs) | **Motor de Streaming Asíncrono en segundo plano** sobre `System.Threading.Channels.Channel<T>`. Fallback inmediato en $\mathcal{O}(1)$ y política de desalojo LRU (límite 256 MB). |
 | **Resources**| [`CondorTactico/Resources/RecursoGrafico.cs`](./CondorTactico/Resources/RecursoGrafico.cs) | Contenedor de texturas gestionadas con marcas de último acceso para LRU. |
-| **Graphics** | [`CondorTactico/Graphics/CacheSpritesAeronaves.cs`](./CondorTactico/Graphics/CacheSpritesAeronaves.cs) | Caché Hash $\mathcal{O}(1)$ de sprites vectoriales pre-rotados con pre-carga en arranque. |
+| **Graphics** | [`CondorTactico/Graphics/CacheSpritesAeronaves.cs`](./CondorTactico/Graphics/CacheSpritesAeronaves.cs) | **Caché multihilo (`Parallel.ForEach`)** de sprites vectoriales 3D pre-rotados con reporte de progreso en tiempo real. |
+| **Graphics** | [`CondorTactico/Graphics/RecursosGraficosHud.cs`](./CondorTactico/Graphics/RecursosGraficosHud.cs) | **Paleta GDI+ precargada** (fuentes, brochas, plumas y fondo estratosférico PArgb) para cero asignaciones por frame. |
 | **Graphics** | [`CondorTactico/Graphics/B2SpiritModel.cs`](./CondorTactico/Graphics/B2SpiritModel.cs) | Modelo vectorial procedimental fotorrealista del B-2 Spirit AF 82-1071 y misil AGM-158 con 4x SSAA. |
 | **Graphics** | [`CondorTactico/Graphics/F35Model.cs`](./CondorTactico/Graphics/F35Model.cs) | Modelo vectorial procedimental del caza F-35A y misil AIM-120 con 4x SSAA. |
 | **Graphics** | [`CondorTactico/Graphics/ParticulaCombate.cs`](./CondorTactico/Graphics/ParticulaCombate.cs) | Estructura de valor (*struct*) para estelas de postcombustión y explosiones aéreas sin recolector de basura (cero GC). |
@@ -78,7 +81,21 @@ dotnet run --project CondorTactico/CondorTactico.csproj
 
 ## 📝 Registro de Estado y Avances del Proyecto
 
-### Versión 3.2.0 (Versión Actual)
+### Versión 3.3.0 (Versión Actual)
+- **Pantalla de Carga e Introducción Táctica Cinematográfica (`PantallaCarga.cs`)**:
+  - Renderizado a 60 FPS con paralaje multicapa: cielo nocturno andino, constelaciones parpadeantes, siluetas de montañas, nubes en desplazamiento y emblema del Cóndor con barrido de radar.
+  - Flyby dinámico de cazas B-2 Spirit y F-35A con estelas de condensación vectoriales.
+  - Barra de progreso con gradiente cian/azul, bitácora de telemetría de subsistemas en vivo y rotación de consejos tácticos de combate.
+  - Transición cinemática suave (fade-in / fade-out) y soporte para cancelación (`Escape`).
+- **Motor de Carga y Precalentamiento en Segundo Plano (`CargadorJuego.cs`)**:
+  - Pipeline asíncrono con 7 etapas ponderadas: configuración de latencia de GC (`SustainedLowLatency`), rasterización paralela de sprites 4x SSAA, paleta GDI+, pre-renderizado del fondo estratosférico, precalentamiento JIT de bucles críticos (física, colisiones, serialización), verificación de socket UDP y compactación final del LOH.
+  - Adaptación automática de resolución de pantalla según área de trabajo del monitor (`ConfiguracionPantalla`).
+- **Optimización Cero Asignaciones GDI+ (`RecursosGraficosHud.cs`)**:
+  - Reutilización estática de brochas, plumas, fuentes y textura de cielo PArgb en el bucle a 60 FPS de `VentanaCombateTactico`, eliminando la presión sobre el Garbage Collector en combate.
+- **Rasterización Multihilo Paralela (`CacheSpritesAeronaves.cs`)**:
+  - Renderizado en paralelo (`Parallel.ForEach`) con reporte de progreso en tiempo real (`Action<int, int, string>`), reduciendo el tiempo de inicialización en CPUs multinúcleo.
+
+### Versión 3.2.0
 - **Corrección Crítica de Controles en Arranque**:
   - Resuelto el bug que impedía moverse al iniciar si no se disparaba previamente (`Enter`).
   - Se eliminaron controles de entrada de texto del lienzo de combate que robaban el foco.
