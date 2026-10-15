@@ -1,0 +1,42 @@
+## ==============================================================================
+## .gitignore - Proyecto de Juego de Aviones / Aeronaves de Combate
+## ==============================================================================
+
+# Compilación y Salidas .NET
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio y VS Code Caches
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Caches de Paquetes NuGet
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.assets.json
+
+# Archivos Temporales y Bloqueos de Sistema
+*.suo
+*.userprefs
+*.tmp
+*.temp
+*~
+Thumbs.db
+[Dd]esktop.ini
+
+# Archivos de Profiling y Resultados en tiempo de ejecución local
+*.log
+**/reporte_profiling_metricas.txt
+**/resultado.txt
+reporte_profiling_metricas.txt
+resultado.txt

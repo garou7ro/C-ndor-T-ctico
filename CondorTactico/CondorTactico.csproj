@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CondorTactico</AssemblyName>
+    <RootNamespace>CondorTactico</RootNamespace>
+    <Title>Cóndor Táctico</Title>
+    <Product>Cóndor Táctico - Simulador de Combate Aéreo</Product>
+    <Description>Simulador táctico de combate aéreo 2D de alta fidelidad con motor gráfico vectorial 4x SSAA, particionamiento espacial O(N+K), streaming asíncrono y multijugador UDP.</Description>
+    <Company>Universidad Nacional de Juliaca (UNAJ)</Company>
+    <Version>3.1.0.0</Version>
+  </PropertyGroup>
+
+</Project>
