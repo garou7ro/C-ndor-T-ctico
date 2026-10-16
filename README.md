@@ -49,6 +49,8 @@ Incorpora un motor gráfico vectorial procedimental con suavizado bicúbico (**4
 | **Audio**    | [`CondorTactico/Audio/SintetizadorAudioTactico.cs`](./CondorTactico/Audio/SintetizadorAudioTactico.cs) | **Sintetizador de audio procedural en memoria** (PCM 16-bit): cañón Vulcan 20mm, misiles, explosiones, alertas de lock y estampido sónico. |
 | **Networking**| [`CondorTactico/Networking/RedClienteServidor.cs`](./CondorTactico/Networking/RedClienteServidor.cs) | Sockets UDP no bloqueantes (`GestorRedClienteServidor`) y DTO de serialización compacta `PaqueteRedAeronave`. |
 | **Diagnostics**| [`CondorTactico/Diagnostics/ProfilerMotor.cs`](./CondorTactico/Diagnostics/ProfilerMotor.cs) | Instrumentación de alta precisión (`Stopwatch`), telemetría de CPU en microsegundos, RAM, GC y exportador de informes (`F4`). |
+| **Tools** | [`tools/CapturadorRemoto/`](./tools/CapturadorRemoto/) | **Herramienta aislada externa**: renderizado offscreen y capturas vía reflexión sin alterar el código fuente del juego. |
+| **Scripts** | [`scripts/generar_capturas_remotas.ps1`](./scripts/generar_capturas_remotas.ps1) | **Script de telemetría remota**: genera capturas PNG, video MP4 y GIF optimizados para inspección móvil. |
 
 ---
 
