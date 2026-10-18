@@ -40,3 +40,10 @@ Thumbs.db
 **/resultado.txt
 reporte_profiling_metricas.txt
 resultado.txt
+
+# Capturas de telemetría y pruebas locales
+capturas/
+docs/capturas/
+assets/screenshots/0*
+assets/screenshots/1*
+assets/screenshots/frames_temp/

@@ -1,5 +1,5 @@
 // ==============================================================================
-// PROYECTO: CÓNDOR TÁCTICO (SIMULADOR DE COMBATE AÉREO 2D)
+// PROYECTO: CÓNDOR TÁCTICO 3D (MOTOR WEBGL 2.0 + WEBVIEW2 GPU + RED UDP NATIVA)
 // AUTORES:
 //   - RONAL ABELIN LARICO CCASO
 //   - CLEVER NANDOR MAMANI HUALLPA
@@ -7,7 +7,7 @@
 //   - JHON ALEX HUARACALLO SUCARI
 //   - HECTOR CARLOS TORRES FLORES
 // INSTITUCION: UNIVERSIDAD NACIONAL DE JULIACA (UNAJ)
-// VERSION: 3.1.0
+// VERSION: 5.1.0
 // ==============================================================================
 
 using System;
@@ -19,26 +19,13 @@ namespace CondorTactico
     internal static class Program
     {
         /// <summary>
-        /// Punto de entrada principal para el simulador Cóndor Táctico.
+        /// Punto de entrada principal para Cóndor Táctico 3D.
         /// </summary>
         [STAThread]
         static void Main()
         {
             ApplicationConfiguration.Initialize();
-
-            // Desplegar la pantalla de carga e introducción táctica (60 FPS, paralaje, precalentamiento)
-            using var pantallaCarga = new PantallaCarga();
-            DialogResult res = pantallaCarga.ShowDialog();
-
-            if (res != DialogResult.OK || pantallaCarga.Resultado == null)
-            {
-                // El usuario canceló la carga (Escape) o cerró la ventana
-                return;
-            }
-
-            // Iniciar el simulador de combate táctico con los recursos precargados
-            Application.Run(new VentanaCombateTactico(pantallaCarga.Resultado));
+            Application.Run(new VentanaJuego3D());
         }
     }
 }
-

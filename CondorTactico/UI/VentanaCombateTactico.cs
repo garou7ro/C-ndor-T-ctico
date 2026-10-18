@@ -7,7 +7,7 @@
 //   - JHON ALEX HUARACALLO SUCARI
 //   - HECTOR CARLOS TORRES FLORES
 // INSTITUCION: UNIVERSIDAD NACIONAL DE JULIACA (UNAJ)
-// VERSION: 3.1.0
+// VERSION: 4.0.0
 // ==============================================================================
 
 using System;
@@ -15,6 +15,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 using CondorTactico.Audio;
 using CondorTactico.GraphicsEffects;
@@ -36,19 +37,58 @@ namespace CondorTactico
         private readonly Button btnRed = new Button();
         private readonly Button btnMetricas = new Button();
         private readonly Button btnAcercaDe = new Button();
+        private readonly Button btnTiendaHangar = new Button();
+        private readonly Button btnPausa = new Button();
+        private readonly Button btnMenuPrincipal = new Button();
 
         // Efectos visuales cinematográficos (Screen Shake, Ondas expansivas, Sombras pseudo-3D, Casquillos, Vórtices) y HUD militar
         private readonly GestorEfectosVisualesCombate _efectosVisuales = new GestorEfectosVisualesCombate();
         private readonly HudTacticoMilitar _hudMilitar = new HudTacticoMilitar();
 
-        // Parámetros de misión y enlace táctico
+        // Parámetros de misión, campaña, progresión y enlace táctico
+        private ModalidadPartida _modalidadActual = ModalidadPartida.CampanaCasual;
+        private int _nivelCampanaActual = 1;
+        private int _oleadaActual = 1;
+        private int _totalOleadasNivel = 2;
+        private bool _enFaseJefe = false;
+        private int _vidaMaximaJefeActual = 50;
+        private string _nombreJefeActual = "COMANDANTE RIVAL";
+
         private string _nombrePilotoActual = "CÓNDOR-01";
         private TipoAeronave _modeloJugadorActual = TipoAeronave.B2_Spirit_Stealth;
         private TipoAeronave _modeloRivalActual = TipoAeronave.F35_Lightning_II;
         private bool _incluirEscoltaActual = true;
-        private ModoRedJuego _modoRedActual = ModoRedJuego.Servidor_Host_Online;
+        private ModoRedJuego _modoRedActual = ModoRedJuego.Local_Combate_IA;
         private string _ipRedActual = "127.0.0.1";
         private int _puertoRedActual = 15050;
+        private int _equipoLocal = 1;
+
+        // Sistemas de Jugabilidad: Poderes, Combos, Suministros, Peligros, Checkpoints, Pausa y Tutorial
+        private readonly List<SuministroCombate> _suministros = new List<SuministroCombate>(16);
+        private readonly List<ObstaculoAmbiental> _obstaculosAmbientales = new List<ObstaculoAmbiental>(16);
+        private readonly ControladorTutorial _tutorial = new ControladorTutorial();
+
+        private float _cargaPoderEspecial = 100f;
+        private int _ticksPoderActivo = 0;
+        private int _ticksInvulnerableJugador = 0;
+        private int _ticksEnemigosParalizados = 0;
+        private int _comboActual = 1;
+        private int _comboMaximoPartida = 1;
+        private int _ticksExpiracionCombo = 0;
+        private int _monedasRecolectadasPartida = 0;
+        private int _vidasReserva = 1;
+        private bool _checkpointJefeAlcanzado = false;
+        private bool _usoReaparicionEnNivel = false;
+        private int _disparosPartida = 0;
+        private int _impactosPartida = 0;
+        private int _impactosCriticosPartida = 0;
+        private bool _juegoPausado = false;
+
+        // Resumen de Recompensas al finalizar partida
+        private int _ultimasMonedasGanadas = 0;
+        private int _ultimaXPGanada = 0;
+        private int _ultimasEstrellasGanadas = 0;
+        private string _textoLogrosRecientes = "";
 
         // Entidades Polimórficas OOP
         private AeronaveBase _naveJugador = null!;
@@ -72,6 +112,7 @@ namespace CondorTactico
         // Control de bucle de juego y entrada fluida
         private readonly System.Windows.Forms.Timer tiempo = new System.Windows.Forms.Timer();
         private readonly HashSet<Keys> _teclasActivas = new HashSet<Keys>();
+        private Point _ultimaPosicionRaton = new Point(400, 450);
         private bool _mostrarHudProfiling = true;
         private bool _juegoTerminado = false;
         private bool _victoriaJugador = false;
@@ -100,23 +141,27 @@ namespace CondorTactico
         // =========================================================================
         public void Iniciar(ResultadoCarga? resultado = null)
         {
-            // Asegurar que el caché multihilo de sprites vectoriales 3D esté listo
             if (!CacheSpritesAeronaves.EstaInicializado)
             {
                 CacheSpritesAeronaves.InicializarCache();
             }
 
-            // Asegurar que la paleta de recursos GDI+ precargados esté lista (cero asignaciones por frame)
             if (!RecursosGraficosHud.EstaInicializado)
             {
                 RecursosGraficosHud.Inicializar();
             }
 
+            AplicarPreferenciasConfiguracion();
+
             this.FormBorderStyle = FormBorderStyle.Sizable;
-            this.MinimumSize = new Size(860, 680);
-            this.Size = resultado?.TamanoVentanaPrincipal ?? ConfiguracionPantalla.CalcularTamanoVentanaPrincipal();
+            this.MinimumSize = new Size(920, 680);
+            this.Size = resultado?.TamanoVentanaPrincipal ?? GestorEstadoGlobal.Configuracion.ObtenerTamanoResolucion();
+            if (GestorEstadoGlobal.Configuracion.PantallaCompleta)
+            {
+                this.WindowState = FormWindowState.Maximized;
+            }
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.Text = "CÓNDOR TÁCTICO v3.3 | SIMULADOR DE COMBATE AÉREO 2D | UNAJ | B-2 SPIRIT & F-35";
+            this.Text = "CÓNDOR TÁCTICO v4.0 | SIMULADOR DE COMBATE AÉREO 2D | UNAJ";
             this.DoubleBuffered = true;
             this.KeyPreview = true;
 
@@ -126,26 +171,33 @@ namespace CondorTactico
             contiene.Dock = DockStyle.Fill;
             contiene.BackColor = Color.FromArgb(24, 58, 98);
             contiene.Paint += RenderizarEscenaCompleta;
+            contiene.MouseMove += (s, e) => _ultimaPosicionRaton = e.Location;
+            contiene.MouseDown += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Left && !_juegoPausado && !_juegoTerminado)
+                {
+                    EjecutarDisparoJugador();
+                }
+                else if (e.Button == MouseButtons.Right && !_juegoPausado && !_juegoTerminado)
+                {
+                    IntentarActivarPoderEspecial();
+                }
+            };
             this.Controls.Add(contiene);
             contiene.BringToFront();
 
-            // Inicializar nubes estratosféricas para efecto de paralaje aéreo
             for (int i = 0; i < _nubesEstratosfera.Length; i++)
             {
                 _nubesEstratosfera[i] = new PointF(_rng.Next(20, 900), _rng.Next(20, 650));
             }
 
-            // Suscribir eventos de teclado para vuelo fluido multidireccional
             this.KeyDown += EventoKeyDown;
             this.KeyUp += EventoKeyUp;
 
-            // Iniciar arquitectura Cliente-Servidor por defecto en Modo Host Online (UDP :15050)
             _gestorRed.IniciarArquitectura(_modoRedActual, _ipRedActual, _puertoRedActual);
 
-            // Desplegar aeronaves iniciales en el espacio aéreo (B-2 Spirit AF 82-1071 + F-35 Lightning II)
             DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
 
-            // Configurar Timer de alta frecuencia (~60 FPS = 16 ms)
             tiempo.Interval = 16;
             tiempo.Tick += ImpactarTick;
             tiempo.Start();
@@ -153,8 +205,45 @@ namespace CondorTactico
             DevolverFocoAlLienzo();
         }
 
+        private void AplicarPreferenciasConfiguracion()
+        {
+            ConfiguracionJuego cfg = GestorEstadoGlobal.Configuracion;
+            _nombrePilotoActual = GestorEstadoGlobal.Perfil.NombrePiloto;
+            _modeloJugadorActual = GestorEstadoGlobal.ObtenerModeloAeronaveEquipada();
+            _mostrarHudProfiling = cfg.MostrarTelemetria;
+            _nivelCampanaActual = Math.Clamp(GestorEstadoGlobal.Perfil.NivelMaximoCampanaDesbloqueado, 1, 5);
+        }
+
         /// <summary>
-        /// Construye la barra superior táctica con accesos directos a subventanas modulares (Red, Misión, Profiling, Info).
+        /// Configura la modalidad exacta (Campaña Casual, Tutorial, Batalla Libre o Multijugador 1v1/2v2/Coop)
+        /// invocada desde el Menú Principal.
+        /// </summary>
+        public void ConfigurarPartidaEspecifica(
+            ModalidadPartida modalidad,
+            int nivelCampana,
+            ModoRedJuego modoRed = ModoRedJuego.Local_Combate_IA,
+            string ipRed = "127.0.0.1",
+            int puertoRed = 15050,
+            int equipoLocal = 1)
+        {
+            AplicarPreferenciasConfiguracion();
+            _modalidadActual = modalidad;
+            _nivelCampanaActual = Math.Clamp(nivelCampana, 1, GestorEstadoGlobal.NivelesCampana.Count);
+            _modoRedActual = modoRed;
+            _ipRedActual = ipRed;
+            _puertoRedActual = puertoRed;
+            _equipoLocal = equipoLocal;
+
+            _gestorRed.ModalidadMultijugador = modalidad;
+            _gestorRed.EquipoLocal = equipoLocal;
+            _gestorRed.IniciarArquitectura(_modoRedActual, _ipRedActual, _puertoRedActual);
+
+            _checkpointJefeAlcanzado = false;
+            DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
+        }
+
+        /// <summary>
+        /// Construye la barra superior táctica con accesos directos a subventanas modulares y al Menú Principal.
         /// </summary>
         private void ConstruirBarraLanzamientoTactico()
         {
@@ -163,21 +252,42 @@ namespace CondorTactico
             panelLanzador.BackColor = Color.FromArgb(12, 20, 32);
             panelLanzador.Padding = new Padding(6, 5, 6, 4);
 
-            Font fBtn = new Font("Segoe UI", 8.2f, FontStyle.Bold);
-            int curX = 8;
+            Font fBtn = new Font("Segoe UI", 8.0f, FontStyle.Bold);
+            int curX = 6;
 
-            // 1. Botón Nueva Misión / Reiniciar
-            ConfigurarBotonBarra(btnLanzar, "🚀 NUEVA MISIÓN", Color.FromArgb(0, 150, 200), curX, 120, fBtn);
+            // 1. Botón Volver al Menú Principal
+            ConfigurarBotonBarra(btnMenuPrincipal, "🏠 MENÚ", Color.FromArgb(130, 45, 60), curX, 78, fBtn);
+            btnMenuPrincipal.Click += (s, e) =>
+            {
+                GestorEstadoGlobal.GuardarTodo();
+                Close();
+            };
+            panelLanzador.Controls.Add(btnMenuPrincipal);
+            curX += 82;
+
+            // 2. Botón Pausa Táctica
+            ConfigurarBotonBarra(btnPausa, "⏸ PAUSA [P]", Color.FromArgb(65, 85, 115), curX, 92, fBtn);
+            btnPausa.Click += (s, e) =>
+            {
+                AlternarPausa();
+                DevolverFocoAlLienzo();
+            };
+            panelLanzador.Controls.Add(btnPausa);
+            curX += 96;
+
+            // 3. Botón Nueva Misión / Reiniciar
+            ConfigurarBotonBarra(btnLanzar, "🚀 REINICIAR [R]", Color.FromArgb(0, 150, 200), curX, 112, fBtn);
             btnLanzar.Click += (s, e) =>
             {
+                _checkpointJefeAlcanzado = false;
                 DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
                 DevolverFocoAlLienzo();
             };
             panelLanzador.Controls.Add(btnLanzar);
-            curX += 126;
+            curX += 116;
 
-            // 2. Botón Alternar Aeronave Rápido (B-2 Spirit / F-35A)
-            ConfigurarBotonBarra(btnAlternarModelo, "✈️ NAVE: B-2 SPIRIT [1/2]", Color.FromArgb(20, 130, 160), curX, 170, fBtn);
+            // 4. Botón Alternar Aeronave Rápido (B-2 Spirit / F-35A)
+            ConfigurarBotonBarra(btnAlternarModelo, "✈️ NAVE [1/2]", Color.FromArgb(20, 130, 160), curX, 138, fBtn);
             btnAlternarModelo.Click += (s, e) =>
             {
                 TipoAeronave nuevoTipo = _modeloJugadorActual == TipoAeronave.B2_Spirit_Stealth
@@ -186,20 +296,35 @@ namespace CondorTactico
                 CambiarAeronaveJugadorDirecto(nuevoTipo);
             };
             panelLanzador.Controls.Add(btnAlternarModelo);
-            curX += 176;
+            curX += 142;
 
-            // 3. Botón Añadir Escolta
-            ConfigurarBotonBarra(btnEscolta, "➕ ESCOLTA", Color.FromArgb(30, 140, 95), curX, 90, fBtn);
+            // 5. Botón Añadir Escolta
+            ConfigurarBotonBarra(btnEscolta, "➕ ESCOLTA", Color.FromArgb(30, 140, 95), curX, 88, fBtn);
             btnEscolta.Click += (s, e) =>
             {
                 LanzarEscoltaAdicional();
                 DevolverFocoAlLienzo();
             };
             panelLanzador.Controls.Add(btnEscolta);
-            curX += 96;
+            curX += 92;
 
-            // 4. Botón Subventana Misión Táctica
-            ConfigurarBotonBarra(btnMision, "🎯 MISIÓN", Color.FromArgb(170, 110, 30), curX, 95, fBtn);
+            // 6. Botón Tienda y Hangar
+            ConfigurarBotonBarra(btnTiendaHangar, "🛒 TIENDA", Color.FromArgb(195, 130, 20), curX, 86, fBtn);
+            btnTiendaHangar.Click += (s, e) =>
+            {
+                bool estabaPausado = _juegoPausado;
+                _juegoPausado = true;
+                using var dlg = new VentanaCentroMando(PestanaCentroMando.Tienda);
+                dlg.ShowDialog(this);
+                AplicarMejorasANaveJugador();
+                _juegoPausado = estabaPausado;
+                DevolverFocoAlLienzo();
+            };
+            panelLanzador.Controls.Add(btnTiendaHangar);
+            curX += 90;
+
+            // 7. Botón Subventana Misión Táctica
+            ConfigurarBotonBarra(btnMision, "🎯 MISIÓN", Color.FromArgb(170, 110, 30), curX, 84, fBtn);
             btnMision.Click += (s, e) =>
             {
                 using var dlg = new VentanaAjustesMision(
@@ -210,6 +335,7 @@ namespace CondorTactico
                     (piloto, tJug, tRiv, escolta) =>
                     {
                         _nombrePilotoActual = piloto;
+                        GestorEstadoGlobal.Perfil.NombrePiloto = piloto;
                         _modeloJugadorActual = tJug;
                         _modeloRivalActual = tRiv;
                         _incluirEscoltaActual = escolta;
@@ -220,32 +346,30 @@ namespace CondorTactico
                 DevolverFocoAlLienzo();
             };
             panelLanzador.Controls.Add(btnMision);
-            curX += 101;
+            curX += 88;
 
-            // 5. Botón Subventana Red Multijugador UDP
-            ConfigurarBotonBarra(btnRed, "🌐 RED UDP", Color.FromArgb(50, 100, 180), curX, 95, fBtn);
+            // 8. Botón Subventana Red Multijugador UDP
+            ConfigurarBotonBarra(btnRed, "🌐 LOBBY RED", Color.FromArgb(110, 65, 195), curX, 98, fBtn);
             btnRed.Click += (s, e) =>
             {
-                using var dlg = new VentanaConfiguracionRed(
-                    _gestorRed,
-                    (modo, ip, puerto) =>
-                    {
-                        _modoRedActual = modo;
-                        _ipRedActual = ip;
-                        _puertoRedActual = puerto;
-                        _gestorRed.IniciarArquitectura(modo, ip, puerto);
-                    },
-                    _modoRedActual,
-                    _ipRedActual,
-                    _puertoRedActual);
-                dlg.ShowDialog(this);
+                using var dlg = new VentanaLobbyMultijugador(_gestorRed);
+                if (dlg.ShowDialog(this) == DialogResult.OK && dlg.IniciarPartidaConfirmada)
+                {
+                    ConfigurarPartidaEspecifica(
+                        dlg.ModalidadSeleccionada,
+                        _nivelCampanaActual,
+                        dlg.ModoRedSeleccionado,
+                        dlg.IpSeleccionada,
+                        dlg.PuertoSeleccionado,
+                        dlg.EquipoSeleccionado);
+                }
                 DevolverFocoAlLienzo();
             };
             panelLanzador.Controls.Add(btnRed);
-            curX += 101;
+            curX += 102;
 
-            // 6. Botón Subventana Telemetría y Profiling (F3/F4)
-            ConfigurarBotonBarra(btnMetricas, "📊 TELEMETRÍA [F3]", Color.FromArgb(90, 70, 160), curX, 130, fBtn);
+            // 9. Botón Subventana Telemetría y Profiling (F3/F4)
+            ConfigurarBotonBarra(btnMetricas, "📊 F3", Color.FromArgb(75, 65, 140), curX, 64, fBtn);
             btnMetricas.Click += (s, e) =>
             {
                 using var dlg = new VentanaReporteMetricas(_profiler, _gestorRed, _naveJugador);
@@ -253,10 +377,10 @@ namespace CondorTactico
                 DevolverFocoAlLienzo();
             };
             panelLanzador.Controls.Add(btnMetricas);
-            curX += 136;
+            curX += 68;
 
-            // 7. Botón Subventana Acerca de y Créditos UNAJ
-            ConfigurarBotonBarra(btnAcercaDe, "ℹ️ INFO UNAJ", Color.FromArgb(60, 75, 95), curX, 95, fBtn);
+            // 10. Botón Subventana Acerca de y Créditos UNAJ
+            ConfigurarBotonBarra(btnAcercaDe, "ℹ️ UNAJ", Color.FromArgb(55, 70, 90), curX, 72, fBtn);
             btnAcercaDe.Click += (s, e) =>
             {
                 using var dlg = new VentanaAcercaDe();
@@ -279,15 +403,15 @@ namespace CondorTactico
             btn.FlatStyle = FlatStyle.Flat;
             btn.FlatAppearance.BorderSize = 1;
             btn.FlatAppearance.BorderColor = Color.FromArgb(80, 255, 255, 255);
-            btn.TabStop = false; // NUNCA robar foco al lienzo de combate
+            btn.TabStop = false;
             btn.Cursor = Cursors.Hand;
         }
 
         private void ActualizarBotonModelo()
         {
             btnAlternarModelo.Text = _modeloJugadorActual == TipoAeronave.B2_Spirit_Stealth
-                ? "✈️ NAVE: B-2 SPIRIT [1/2]"
-                : "✈️ NAVE: F-35A LIGHTNING [1/2]";
+                ? "✈️ B-2 SPIRIT [1/2]"
+                : "✈️ F-35A [1/2]";
         }
 
         public void DevolverFocoAlLienzo()
@@ -319,7 +443,6 @@ namespace CondorTactico
 
         protected override bool ProcessDialogKey(Keys keyData)
         {
-            // Evitar que Windows Forms intercepte las teclas de flechas para navegar entre botones
             Keys k = keyData & Keys.KeyCode;
             if (k == Keys.Left || k == Keys.Right || k == Keys.Up || k == Keys.Down)
             {
@@ -362,9 +485,9 @@ namespace CondorTactico
                    k == Keys.Space || k == Keys.Enter;
         }
 
-        /// <summary>
-        /// Procedimiento polimórfico que instancia y lanza las aeronaves en el espacio aéreo.
-        /// </summary>
+        // =========================================================================
+        // DESPLIEGUE DE MISIONES, OLEADAS Y JEFES FINALES
+        // =========================================================================
         public void DesplegarMisionAerea(TipoAeronave modeloJugador, TipoAeronave modeloRival, bool incluirEscolta)
         {
             _modeloJugadorActual = modeloJugador;
@@ -372,21 +495,42 @@ namespace CondorTactico
             _incluirEscoltaActual = incluirEscolta;
 
             _aeronaves.Clear();
+            _aeronavesRemotas.Clear();
             _proyectiles.Clear();
             _particulas.Clear();
             _textosImpacto.Clear();
+            _suministros.Clear();
+            _obstaculosAmbientales.Clear();
             _teclasActivas.Clear();
+
             _juegoTerminado = false;
+            _juegoPausado = false;
             _victoriaJugador = false;
             _mensajeResultado = "";
+            _comboActual = 1;
+            _comboMaximoPartida = 1;
+            _ticksExpiracionCombo = 0;
+            _monedasRecolectadasPartida = 0;
+            _disparosPartida = 0;
+            _impactosPartida = 0;
+            _impactosCriticosPartida = 0;
+            _cargaPoderEspecial = 100f;
+            _ticksPoderActivo = 0;
+            _ticksInvulnerableJugador = 60; // 1s de protección inicial
+            _ticksEnemigosParalizados = 0;
+            _vidasReserva = 1;
+            _usoReaparicionEnNivel = false;
 
             int w = Math.Max(600, contiene.Width);
             int h = Math.Max(500, contiene.Height);
-            string nombrePiloto = string.IsNullOrWhiteSpace(_nombrePilotoActual) ? "UNAJ-G1" : _nombrePilotoActual.Trim();
+            string nombrePiloto = string.IsNullOrWhiteSpace(_nombrePilotoActual) ? "CÓNDOR-01" : _nombrePilotoActual.Trim();
 
-            // 1. Instanciar aeronave del jugador mediante Polimorfismo OOP
+            // Calcular estadísticas mejoradas del jugador desde su inventario/tienda
+            PerfilJugador perf = GestorEstadoGlobal.Perfil;
+            int vidaJugador = 30 + (perf.ObtenerNivelMejora("MEJORA_BLINDAJE") * 6) + (perf.AeronaveEquipadaId == "NAVE_CONDOR_X" ? 8 : 0);
+
             float xJug = (w * 0.5f) - 60f;
-            float yJug = h - 155f;
+            float yJug = h - 165f;
             _naveJugador = CrearInstanciaPolimorfica(
                 $"JUG-{Environment.ProcessId}",
                 nombrePiloto,
@@ -394,36 +538,70 @@ namespace CondorTactico
                 esRival: false,
                 xJug,
                 yJug,
-                vidaPersonalizada: 30);
+                vidaPersonalizada: vidaJugador);
+            AplicarMejorasANaveJugador();
             _aeronaves.Add(_naveJugador);
 
-            // 2. Instanciar comandante rival principal
-            _naveRivalPrincipal = CrearInstanciaPolimorfica(
-                "RIVAL-LIDER",
-                modeloRival == TipoAeronave.B2_Spirit_Stealth ? "B2-SPIRIT-BOSS" : "F35-RIVAL-01",
-                modeloRival,
-                esRival: true,
-                x: w * 0.35f,
-                y: 28f,
-                vidaPersonalizada: 50);
-            _aeronaves.Add(_naveRivalPrincipal);
-
-            // 3. Si está en modo Escuadrón Mixto o Escolta, lanzar también el otro modelo de aeronave
-            if (incluirEscolta)
+            // Configurar oleadas según modalidad
+            if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
             {
-                TipoAeronave segundoRival = (modeloRival == TipoAeronave.B2_Spirit_Stealth)
-                    ? TipoAeronave.F35_Lightning_II
-                    : TipoAeronave.B2_Spirit_Stealth;
+                _tutorial.Reiniciar();
+                _oleadaActual = 1;
+                _totalOleadasNivel = 1;
+                _enFaseJefe = false;
+                // Generar un suministro inicial para el Paso 3 del tutorial
+                GenerarSuministroEnPosicion(w * 0.5f, h * 0.52f, TipoSuministro.EnergiaHabilidad);
+            }
+            else if (_modalidadActual == ModalidadPartida.CampanaCasual)
+            {
+                var defNivel = GestorEstadoGlobal.NivelesCampana[Math.Clamp(_nivelCampanaActual - 1, 0, 4)];
+                _totalOleadasNivel = defNivel.CantidadOleadasPrevias;
+                if (_checkpointJefeAlcanzado)
+                {
+                    _oleadaActual = _totalOleadasNivel + 1;
+                    DesplegarJefeFinalCampana(defNivel, w);
+                }
+                else
+                {
+                    _oleadaActual = 1;
+                    _enFaseJefe = false;
+                    DesplegarOleadaEnemiga(_oleadaActual, w);
+                }
+            }
+            else
+            {
+                // Batalla Libre o Multijugador (1v1, 2v2, Cooperativo)
+                _oleadaActual = 1;
+                _totalOleadasNivel = 1;
+                _enFaseJefe = false;
 
-                AeronaveBase escoltaRival = CrearInstanciaPolimorfica(
-                    "RIVAL-ESCOLTA",
-                    segundoRival == TipoAeronave.B2_Spirit_Stealth ? "B2-1071-RIVAL" : "F35-WING-02",
-                    segundoRival,
+                int vidaRival = _modalidadActual == ModalidadPartida.Multijugador_Cooperativo ? 80 : 50;
+                _naveRivalPrincipal = CrearInstanciaPolimorfica(
+                    "RIVAL-LIDER",
+                    modeloRival == TipoAeronave.B2_Spirit_Stealth ? "B2-SPIRIT-BOSS" : "F35-RIVAL-01",
+                    modeloRival,
                     esRival: true,
-                    x: w * 0.68f,
-                    y: 42f,
-                    vidaPersonalizada: 40);
-                _aeronaves.Add(escoltaRival);
+                    x: w * 0.35f,
+                    y: 32f,
+                    vidaPersonalizada: vidaRival);
+                _aeronaves.Add(_naveRivalPrincipal);
+
+                if (incluirEscolta || _modalidadActual == ModalidadPartida.Multijugador_2v2 || _modalidadActual == ModalidadPartida.Multijugador_Cooperativo)
+                {
+                    TipoAeronave segundoRival = (modeloRival == TipoAeronave.B2_Spirit_Stealth)
+                        ? TipoAeronave.F35_Lightning_II
+                        : TipoAeronave.B2_Spirit_Stealth;
+
+                    AeronaveBase escoltaRival = CrearInstanciaPolimorfica(
+                        "RIVAL-ESCOLTA",
+                        segundoRival == TipoAeronave.B2_Spirit_Stealth ? "B2-1071-RIVAL" : "F35-WING-02",
+                        segundoRival,
+                        esRival: true,
+                        x: w * 0.68f,
+                        y: 44f,
+                        vidaPersonalizada: 40);
+                    _aeronaves.Add(escoltaRival);
+                }
             }
 
             ActualizarBotonModelo();
@@ -431,9 +609,79 @@ namespace CondorTactico
             DevolverFocoAlLienzo();
         }
 
-        /// <summary>
-        /// Función Factoría (Factory Method Pattern) que retorna una instancia polimórfica de AeronaveBase.
-        /// </summary>
+        private void AplicarMejorasANaveJugador()
+        {
+            if (_naveJugador == null) return;
+            PerfilJugador perf = GestorEstadoGlobal.Perfil;
+            int bonusEscudo = perf.ObtenerNivelMejora("MEJORA_ESCUDO") * 4;
+            _naveJugador.EscudoActual = Math.Max(_naveJugador.EscudoActual, 12 + bonusEscudo);
+        }
+
+        private void DesplegarOleadaEnemiga(int numeroOleada, int anchoLienzo)
+        {
+            _enFaseJefe = false;
+            int cantidadEnemigos = Math.Min(4, 1 + numeroOleada);
+            int vidaBase = 22 + (_nivelCampanaActual * 6) + (numeroOleada * 4);
+
+            for (int i = 0; i < cantidadEnemigos; i++)
+            {
+                TipoAeronave tipo = ((i + numeroOleada) % 2 == 0)
+                    ? TipoAeronave.F35_Lightning_II
+                    : TipoAeronave.B2_Spirit_Stealth;
+
+                float x = 80f + (i * ((anchoLienzo - 220f) / Math.Max(1, cantidadEnemigos)));
+                float y = 26f + (i % 2) * 28f;
+
+                var enemigo = CrearInstanciaPolimorfica(
+                    $"OLEADA-{numeroOleada}-{i + 1}",
+                    $"HOSTIL-N{_nivelCampanaActual}-{i + 1}",
+                    tipo,
+                    esRival: true,
+                    x: x,
+                    y: y,
+                    vidaPersonalizada: vidaBase);
+
+                if (i == 0) _naveRivalPrincipal = enemigo;
+                _aeronaves.Add(enemigo);
+            }
+        }
+
+        private void DesplegarJefeFinalCampana(DefinicionNivelCampana defNivel, int anchoLienzo)
+        {
+            _enFaseJefe = true;
+            _checkpointJefeAlcanzado = true;
+            _nombreJefeActual = defNivel.NombreJefeFinal;
+            _vidaMaximaJefeActual = defNivel.VidaJefe;
+
+            _naveRivalPrincipal = CrearInstanciaPolimorfica(
+                $"JEFE-NIVEL-{defNivel.NumeroNivel}",
+                defNivel.NombreJefeFinal,
+                defNivel.ModeloJefe,
+                esRival: true,
+                x: (anchoLienzo * 0.5f) - 70f,
+                y: 34f,
+                vidaPersonalizada: defNivel.VidaJefe);
+
+            _aeronaves.Add(_naveRivalPrincipal);
+
+            // Escolta de guardia para niveles avanzados
+            if (defNivel.NumeroNivel >= 2)
+            {
+                var guardia = CrearInstanciaPolimorfica(
+                    $"GUARDIA-JEFE-{defNivel.NumeroNivel}",
+                    "ESCOLTA-PRETORIANA",
+                    TipoAeronave.F35_Lightning_II,
+                    esRival: true,
+                    x: anchoLienzo * 0.22f,
+                    y: 52f,
+                    vidaPersonalizada: 28 + defNivel.NumeroNivel * 5);
+                _aeronaves.Add(guardia);
+            }
+
+            _efectosVisuales.Destello.Disparar(Color.FromArgb(255, 255, 80, 80), 0.45f);
+            SintetizadorAudioTactico.ReproducirAlertaRadar();
+        }
+
         public static AeronaveBase CrearInstanciaPolimorfica(
             string id,
             string piloto,
@@ -466,7 +714,11 @@ namespace CondorTactico
                 _naveJugador.Y,
                 vidaPersonalizada: Math.Max(20, _naveJugador.VidaActual));
 
+            nueva.PuntajeTactico = _naveJugador.PuntajeTactico;
+            nueva.BajasConfirmadas = _naveJugador.BajasConfirmadas;
+
             _naveJugador = nueva;
+            AplicarMejorasANaveJugador();
             if (idx >= 0) _aeronaves[idx] = nueva;
             else _aeronaves.Add(nueva);
 
@@ -496,11 +748,93 @@ namespace CondorTactico
             GenerarExplosionParticulas(x + 50, 50, Color.OrangeRed, 15);
         }
 
+        private void AlternarPausa()
+        {
+            if (_juegoTerminado) return;
+            _juegoPausado = !_juegoPausado;
+            _teclasActivas.Clear();
+            contiene.Invalidate();
+        }
+
+        // =========================================================================
+        // PODERES ESPECIALES ACTIVOS [Q] / [E]
+        // =========================================================================
+        private void IntentarActivarPoderEspecial()
+        {
+            if (_juegoPausado || _juegoTerminado || _naveJugador == null || !_naveJugador.Activo) return;
+            if (_cargaPoderEspecial < 100f) return;
+
+            _cargaPoderEspecial = 0f;
+            TipoPoderEspecial poder = GestorEstadoGlobal.ObtenerPoderEspecialEquipado();
+            float cx = _naveJugador.X + _naveJugador.Ancho * 0.5f;
+            float cy = _naveJugador.Y + _naveJugador.Alto * 0.5f;
+
+            if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
+            {
+                _tutorial.PoderEspecialUsado = true;
+            }
+
+            switch (poder)
+            {
+                case TipoPoderEspecial.PulsoElectromagnetico_EMP:
+                    // Destruye todos los proyectiles rivales y paraliza enemigos por 3.5 s (210 ticks)
+                    for (int i = 0; i < _proyectiles.Count; i++)
+                    {
+                        if (_proyectiles[i].EsRival) _proyectiles[i].Activo = false;
+                    }
+                    _ticksEnemigosParalizados = 210;
+                    _efectosVisuales.CrearOndaExpansiva(cx, cy, radioMax: 480f, Color.Cyan, velocidad: 550f);
+                    _efectosVisuales.Destello.Disparar(Color.FromArgb(255, 80, 230, 255), 0.50f);
+                    break;
+
+                case TipoPoderEspecial.EscudoCuanticoSobrecarga:
+                    _ticksInvulnerableJugador = 270; // 4.5 s invulnerable
+                    _naveJugador.EscudoActual += 8;
+                    _efectosVisuales.CrearOndaExpansiva(cx, cy, radioMax: 220f, Color.FromArgb(80, 255, 160), velocidad: 380f);
+                    _efectosVisuales.Destello.Disparar(Color.FromArgb(255, 80, 255, 170), 0.40f);
+                    break;
+
+                case TipoPoderEspecial.SobrecargaVulcan_Overdrive:
+                    _ticksPoderActivo = 330; // 5.5 s de fuego triple acelerado
+                    _efectosVisuales.CrearOndaExpansiva(cx, cy, radioMax: 200f, Color.Orange, velocidad: 400f);
+                    break;
+
+                case TipoPoderEspecial.SalvaTermobarica:
+                    _efectosVisuales.CrearOndaExpansiva(cx, cy, radioMax: 520f, Color.FromArgb(255, 70, 110), velocidad: 600f);
+                    _efectosVisuales.Destello.Disparar(Color.FromArgb(255, 255, 90, 60), 0.65f);
+                    _efectosVisuales.Camara.AgregarTrauma(0.55f);
+                    for (int i = 0; i < _aeronaves.Count; i++)
+                    {
+                        var a = _aeronaves[i];
+                        if (a.EsRival && a.Activo)
+                        {
+                            a.VidaActual = Math.Max(0, a.VidaActual - 18);
+                            GenerarExplosionParticulas(a.X + a.Ancho * 0.5f, a.Y + a.Alto * 0.5f, Color.OrangeRed, 28);
+                            if (a.VidaActual <= 0)
+                            {
+                                a.Activo = false;
+                                _naveJugador.BajasConfirmadas++;
+                                _naveJugador.PuntajeTactico += 250;
+                            }
+                        }
+                    }
+                    break;
+            }
+
+            SintetizadorAudioTactico.ReproducirMisil();
+        }
+
         // =========================================================================
         // BUCLE PRINCIPAL DE TIEMPO REAL (FÍSICA, COLISIONES BIG-O, RED Y PROFILING)
         // =========================================================================
         private void ImpactarTick(object? sender, EventArgs e)
         {
+            if (_juegoPausado)
+            {
+                contiene.Invalidate();
+                return;
+            }
+
             _profiler.IniciarMedicionUpdate();
 
             Size limites = contiene.ClientSize;
@@ -511,7 +845,7 @@ namespace CondorTactico
 
             _offsetRadarY = (_offsetRadarY + 1.2f) % 64f;
 
-            // 1. Mover nubes estratosféricas para sensación de velocidad supersónica
+            // 1. Mover nubes estratosféricas
             for (int i = 0; i < _nubesEstratosfera.Length; i++)
             {
                 float ny = _nubesEstratosfera[i].Y + (i % 3 + 1) * 0.85f;
@@ -526,25 +860,61 @@ namespace CondorTactico
 
             if (!_juegoTerminado)
             {
-                // 2. Procesar entrada continua del piloto local (funciona de inmediato al iniciar)
+                // Actualizar temporizadores de estados tácticos
+                if (_ticksPoderActivo > 0) _ticksPoderActivo--;
+                if (_ticksInvulnerableJugador > 0) _ticksInvulnerableJugador--;
+                if (_ticksEnemigosParalizados > 0) _ticksEnemigosParalizados--;
+                if (_cargaPoderEspecial < 100f)
+                {
+                    _cargaPoderEspecial = Math.Min(100f, _cargaPoderEspecial + 0.08f);
+                }
+
+                if (_ticksExpiracionCombo > 0)
+                {
+                    _ticksExpiracionCombo--;
+                    if (_ticksExpiracionCombo == 0) _comboActual = 1;
+                }
+
+                // 2. Procesar entrada continua del piloto local
                 ProcesarMovimientoContinuoJugador(limites);
 
-                // 3. Actualizar física e IA de todas las aeronaves activas
+                // 3. Actualizar Tutorial si está activo
+                if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
+                {
+                    int pasoPrevio = _tutorial.PasoActual;
+                    _tutorial.AvanzarPasoSiCorresponde(out bool avanzo);
+                    if (avanzo)
+                    {
+                        SintetizadorAudioTactico.ReproducirAlertaRadar();
+                        if (_tutorial.PasoActual == 5 && !_aeronaves.Any(a => a.EsRival && a.Activo))
+                        {
+                            var dron = CrearInstanciaPolimorfica("DRON-TUTORIAL", "DRON-INSTRUCTOR", TipoAeronave.F35_Lightning_II, true, limites.Width * 0.45f, 45f, 20);
+                            _naveRivalPrincipal = dron;
+                            _aeronaves.Add(dron);
+                        }
+                    }
+                }
+
+                // 4. Actualizar física, IA y patrones de Jefe Final
                 _contadorTickIA++;
                 for (int i = 0; i < _aeronaves.Count; i++)
                 {
                     AeronaveBase nave = _aeronaves[i];
                     if (!nave.Activo) continue;
 
+                    if (nave.EsRival && _ticksEnemigosParalizados > 0)
+                    {
+                        // Enemigo paralizado por Pulso EMP
+                        continue;
+                    }
+
                     nave.ActualizarFisica(limites);
 
-                    // Estela de postcombustión si está acelerando
                     if (nave.Acelerando && (_contadorTickIA % 2 == 0))
                     {
                         GenerarEstelaPropulsion(nave);
                     }
 
-                    // Humo de daño crítico e ignición si la aeronave tiene salud degradada
                     if (nave.VidaActual < 20 && (_contadorTickIA % 3 == 0))
                     {
                         GenerarExplosionParticulas(
@@ -553,27 +923,33 @@ namespace CondorTactico
                             Color.FromArgb(255, 65, 20),
                             4);
                     }
-                    else if (nave.VidaActual < 40 && (_contadorTickIA % 5 == 0))
-                    {
-                        GenerarExplosionParticulas(
-                            nave.X + nave.Ancho * 0.5f + _rng.Next(-6, 7),
-                            nave.Y + (nave.EsRival ? 10f : nave.Alto - 10f),
-                            Color.FromArgb(130, 40, 40, 45),
-                            2);
-                    }
 
-                    // Disparo automático táctico de aeronaves rivales controladas por IA
-                    if (nave.EsRival && !nave.ControladaPorRed && (_contadorTickIA % 42 == 0))
+                    // Disparo de IA y Patrones Especiales de Jefe Final
+                    if (nave.EsRival && !nave.ControladaPorRed)
                     {
-                        List<Proyectil> salvasRival = nave.Disparar();
-                        for (int s = 0; s < salvasRival.Count; s++)
+                        int cadenciaIA = _enFaseJefe ? Math.Max(22, 38 - _nivelCampanaActual * 3) : 42;
+                        if (_contadorTickIA % cadenciaIA == 0)
                         {
-                            _proyectiles.Add(salvasRival[s]);
+                            List<Proyectil> salvasRival = nave.Disparar();
+                            for (int s = 0; s < salvasRival.Count; s++)
+                            {
+                                _proyectiles.Add(salvasRival[s]);
+                            }
+
+                            // Si es el Jefe Final, ejecutar patrón de abanico o ráfaga lateral
+                            if (_enFaseJefe && nave == _naveRivalPrincipal && (_contadorTickIA % (cadenciaIA * 2) == 0))
+                            {
+                                EjecutarPatronAtaqueJefe(nave);
+                            }
                         }
                     }
                 }
 
-                // 4. Actualizar proyectiles y compactar inactivos en O(1) mediante Swap-and-Pop
+                // 5. Actualizar Peligros Ambientales y Suministros en Vuelo
+                ActualizarPeligrosAmbientales(limites);
+                ActualizarSuministros(limites);
+
+                // 6. Actualizar proyectiles y compactar inactivos en O(1) mediante Swap-and-Pop
                 for (int i = _proyectiles.Count - 1; i >= 0; i--)
                 {
                     Proyectil p = _proyectiles[i];
@@ -586,10 +962,9 @@ namespace CondorTactico
                     }
                 }
 
-                // 5. Detección de colisiones mediante Grilla Espacial Hash en O(N + K)
+                // 7. Detección de colisiones mediante Grilla Espacial Hash en O(N + K)
                 _grillaColisiones.ProcesarColisiones(_proyectiles, _aeronaves, ProcesarImpactoConfirmado);
 
-                // Compactar proyectiles que impactaron en este tick
                 for (int i = _proyectiles.Count - 1; i >= 0; i--)
                 {
                     if (!_proyectiles[i].Activo)
@@ -600,7 +975,7 @@ namespace CondorTactico
                     }
                 }
 
-                // 6. Sincronización de Red Cliente-Servidor (Envío y Recepción UDP no bloqueante)
+                // 8. Sincronización de Red Cliente-Servidor
                 _contadorTickRed++;
                 if (_contadorTickRed % 2 == 0 && _naveJugador.Activo)
                 {
@@ -608,21 +983,21 @@ namespace CondorTactico
                 }
                 ProcesarPaquetesRedEntrantes();
 
-                // Exportar reporte de métricas periódicamente sin bloquear
                 if (_contadorTickIA == 30 || _contadorTickIA % 300 == 0)
                 {
                     try { _profiler.ExportarReporteMetricas(_gestorRed, _naveJugador); } catch { }
                 }
 
-                // 7. Verificar condiciones de Victoria o Derrota
-                VerificarEstadoPartida();
+                // 9. Verificar avance de oleadas, checkpoints o Victoria/Derrota
+                VerificarEstadoPartida(limites);
             }
 
-            // 8. Actualizar partículas y textos flotantes de impacto
+            // 10. Actualizar partículas y textos flotantes
             ActualizarEfectosVisuales();
 
-            // 9. Actualizar cámara cinematográfica, ondas expansivas, destellos y HUD militar
-            _efectosVisuales.Actualizar(0.016f);
+            float escalaShake = GestorEstadoGlobal.Configuracion.IntensidadSacudidaCamara / 100f;
+            _efectosVisuales.Actualizar(0.016f * Math.Max(0.2f, escalaShake));
+
             if (_naveJugador != null && _naveJugador.Activo)
             {
                 _hudMilitar.Actualizar(0.016f, _naveJugador, _aeronaves);
@@ -645,34 +1020,276 @@ namespace CondorTactico
                 _grillaColisiones.UltimasComparacionesFuerzaBruta,
                 _grillaColisiones.UltimasComparacionesReales);
 
-            // Solicitar redibujado GDI+ con DoubleBuffering
             contiene.Invalidate();
+        }
+
+        private void EjecutarPatronAtaqueJefe(AeronaveBase jefe)
+        {
+            float cx = jefe.X + jefe.Ancho * 0.5f;
+            float cy = jefe.Y + jefe.Alto - 8f;
+
+            // Salva en abanico proporcional al nivel del jefe
+            int numProyectiles = Math.Min(5, 2 + _nivelCampanaActual);
+            float anguloInicial = -3.2f;
+            float paso = (numProyectiles > 1) ? (6.4f / (numProyectiles - 1)) : 0f;
+
+            for (int i = 0; i < numProyectiles; i++)
+            {
+                float vx = anguloInicial + (i * paso);
+                _proyectiles.Add(new Proyectil(
+                    jefe.IdAeronave,
+                    esRival: true,
+                    jefe.Tipo,
+                    cx - 4f,
+                    cy,
+                    vx,
+                    10.5f + (_nivelCampanaActual * 0.8f)));
+            }
+
+            // En Nivel 5 (Apu-Supay), regenera 2 puntos de escudo cada salva especial
+            if (_nivelCampanaActual == 5 && jefe.EscudoActual < 16)
+            {
+                jefe.EscudoActual += 2;
+            }
+        }
+
+        private void ActualizarPeligrosAmbientales(Size limites)
+        {
+            if (_modalidadActual != ModalidadPartida.CampanaCasual) return;
+
+            var defNivel = GestorEstadoGlobal.NivelesCampana[Math.Clamp(_nivelCampanaActual - 1, 0, 4)];
+            TipoPeligroAmbiental tipoPeligro = defNivel.PeligroAmbiental;
+
+            // Nivel 1: Viento cruzado suave
+            if (tipoPeligro == TipoPeligroAmbiental.VientoCruzadoAndino && _naveJugador.Activo)
+            {
+                float empujeViento = (float)Math.Sin(_contadorTickIA * 0.03) * 0.12f;
+                _naveJugador.Mover(empujeViento, 0f, limites);
+            }
+
+            // Generar nuevos obstáculos periódicamente en Niveles 2 a 5
+            if (tipoPeligro != TipoPeligroAmbiental.VientoCruzadoAndino && (_contadorTickIA % 115 == 0))
+            {
+                float xAzar = _rng.Next(70, Math.Max(150, limites.Width - 70));
+                if (tipoPeligro == TipoPeligroAmbiental.TormentaElectrica || tipoPeligro == TipoPeligroAmbiental.LaserOrbitalSatelital)
+                {
+                    _obstaculosAmbientales.Add(new ObstaculoAmbiental
+                    {
+                        X = xAzar,
+                        Y = 0,
+                        RadioOAncho = tipoPeligro == TipoPeligroAmbiental.LaserOrbitalSatelital ? 36f : 26f,
+                        Tipo = tipoPeligro,
+                        TicksAdvertencia = 55,
+                        TicksActivos = 28,
+                        Activo = true
+                    });
+                }
+                else
+                {
+                    _obstaculosAmbientales.Add(new ObstaculoAmbiental
+                    {
+                        X = xAzar,
+                        Y = -20f,
+                        VX = (_rng.NextSingle() - 0.5f) * 2.4f,
+                        VY = tipoPeligro == TipoPeligroAmbiental.MeteoritosPiroclasticos ? 5.8f : 4.2f,
+                        RadioOAncho = tipoPeligro == TipoPeligroAmbiental.MeteoritosPiroclasticos ? 16f : 12f,
+                        Tipo = tipoPeligro,
+                        TicksAdvertencia = 0,
+                        TicksActivos = 300,
+                        Activo = true
+                    });
+                }
+            }
+
+            // Actualizar física y colisión de obstáculos con el jugador
+            for (int i = _obstaculosAmbientales.Count - 1; i >= 0; i--)
+            {
+                ObstaculoAmbiental obs = _obstaculosAmbientales[i];
+                if (!obs.Activo)
+                {
+                    _obstaculosAmbientales.RemoveAt(i);
+                    continue;
+                }
+
+                if (obs.TicksAdvertencia > 0)
+                {
+                    obs.TicksAdvertencia--;
+                    if (obs.TicksAdvertencia == 0)
+                    {
+                        SintetizadorAudioTactico.ReproducirExplosion(esCritica: false);
+                    }
+                }
+                else if (obs.TicksActivos > 0)
+                {
+                    obs.TicksActivos--;
+                    obs.X += obs.VX;
+                    obs.Y += obs.VY;
+
+                    if (obs.Y > limites.Height + 40 || obs.TicksActivos <= 0)
+                    {
+                        obs.Activo = false;
+                    }
+                    else if (_naveJugador.Activo && _ticksInvulnerableJugador <= 0 && obs.IntersectaAeronave(_naveJugador))
+                    {
+                        obs.Activo = false;
+                        _naveJugador.VidaActual = Math.Max(0, _naveJugador.VidaActual - 4);
+                        _comboActual = 1;
+                        _ticksInvulnerableJugador = 35;
+                        _efectosVisuales.Camara.AgregarTrauma(0.28f);
+                        GenerarExplosionParticulas(_naveJugador.X + _naveJugador.Ancho * 0.5f, _naveJugador.Y + 20f, Color.Gold, 16);
+                    }
+                }
+
+                _obstaculosAmbientales[i] = obs;
+            }
+        }
+
+        private void GenerarSuministroEnPosicion(float x, float y, TipoSuministro? tipoForzado = null)
+        {
+            TipoSuministro tipo = tipoForzado ?? (TipoSuministro)_rng.Next(0, 5);
+            _suministros.Add(new SuministroCombate
+            {
+                X = x,
+                Y = y,
+                VY = 1.8f,
+                Tipo = tipo,
+                Activo = true,
+                TicksVida = 600
+            });
+        }
+
+        private void ActualizarSuministros(Size limites)
+        {
+            if (_naveJugador == null || !_naveJugador.Activo) return;
+            RectangleF rectJug = new RectangleF(_naveJugador.X, _naveJugador.Y, _naveJugador.Ancho, _naveJugador.Alto);
+
+            for (int i = _suministros.Count - 1; i >= 0; i--)
+            {
+                SuministroCombate s = _suministros[i];
+                if (!s.Activo)
+                {
+                    _suministros.RemoveAt(i);
+                    continue;
+                }
+
+                if (_modalidadActual != ModalidadPartida.TutorialInteractivo)
+                {
+                    s.Y += s.VY;
+                }
+                s.TicksVida--;
+
+                if (s.Y > limites.Height + 30 || s.TicksVida <= 0)
+                {
+                    s.Activo = false;
+                }
+                else if (rectJug.IntersectsWith(s.ObtenerHitbox()))
+                {
+                    s.Activo = false;
+                    AplicarSuministroRecolectado(s.Tipo);
+                }
+
+                _suministros[i] = s;
+            }
+        }
+
+        private void AplicarSuministroRecolectado(TipoSuministro tipo)
+        {
+            SintetizadorAudioTactico.ReproducirAlertaRadar();
+            if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
+            {
+                _tutorial.SuministroRecolectado = true;
+            }
+
+            string etiqueta = "";
+            switch (tipo)
+            {
+                case TipoSuministro.ReparacionCasco:
+                    _naveJugador.VidaActual = Math.Min(65, _naveJugador.VidaActual + 8);
+                    etiqueta = "+8 HP CASCO";
+                    break;
+                case TipoSuministro.RecargaEscudo:
+                    _naveJugador.EscudoActual = Math.Min(35, _naveJugador.EscudoActual + 6);
+                    etiqueta = "+6 ESCUDO RAM";
+                    break;
+                case TipoSuministro.EnergiaHabilidad:
+                    _cargaPoderEspecial = Math.Min(100f, _cargaPoderEspecial + 45f);
+                    etiqueta = "+45% PODER [Q]";
+                    break;
+                case TipoSuministro.CreditosExtra:
+                    _monedasRecolectadasPartida += 35;
+                    etiqueta = "+35 CRÉDITOS";
+                    break;
+                case TipoSuministro.PotenciadorDano:
+                    _ticksPoderActivo = Math.Max(_ticksPoderActivo, 240);
+                    etiqueta = "¡HIPER-FUEGO!";
+                    break;
+            }
+
+            _textosImpacto.Add(new TextoFlotanteImpacto
+            {
+                X = _naveJugador.X,
+                Y = _naveJugador.Y - 18f,
+                Texto = etiqueta,
+                ColorTexto = Color.FromArgb(255, 80, 255, 160),
+                TicksRestantes = 45,
+                EsCritico = false
+            });
         }
 
         private void ProcesarMovimientoContinuoJugador(Size limites)
         {
             if (!_naveJugador.Activo) return;
 
+            ConfiguracionJuego cfg = GestorEstadoGlobal.Configuracion;
+            float factorSensibilidad = Math.Clamp(cfg.SensibilidadVuelo / 100f, 0.5f, 1.6f);
+
             float dx = 0f;
             float dy = 0f;
 
-            if (_teclasActivas.Contains(Keys.Left) || _teclasActivas.Contains(Keys.A)) dx -= 1.0f;
-            if (_teclasActivas.Contains(Keys.Right) || _teclasActivas.Contains(Keys.D)) dx += 1.0f;
-            if (_teclasActivas.Contains(Keys.Up) || _teclasActivas.Contains(Keys.W)) dy -= 1.0f;
-            if (_teclasActivas.Contains(Keys.Down) || _teclasActivas.Contains(Keys.S)) dy += 1.0f;
+            bool permitirWASD = cfg.EsquemaControl == 0 || cfg.EsquemaControl == 1;
+            bool permitirFlechas = cfg.EsquemaControl == 0 || cfg.EsquemaControl == 2;
+
+            if (permitirFlechas)
+            {
+                if (_teclasActivas.Contains(Keys.Left)) dx -= 1.0f;
+                if (_teclasActivas.Contains(Keys.Right)) dx += 1.0f;
+                if (_teclasActivas.Contains(Keys.Up)) dy -= 1.0f;
+                if (_teclasActivas.Contains(Keys.Down)) dy += 1.0f;
+            }
+            if (permitirWASD)
+            {
+                if (_teclasActivas.Contains(Keys.A)) dx -= 1.0f;
+                if (_teclasActivas.Contains(Keys.D)) dx += 1.0f;
+                if (_teclasActivas.Contains(Keys.W)) dy -= 1.0f;
+                if (_teclasActivas.Contains(Keys.S)) dy += 1.0f;
+            }
+
+            // Esquema guiado por ratón si está seleccionado
+            if (cfg.EsquemaControl == 3)
+            {
+                float targetX = _ultimaPosicionRaton.X - (_naveJugador.Ancho * 0.5f);
+                float targetY = _ultimaPosicionRaton.Y - (_naveJugador.Alto * 0.5f);
+                float diffX = targetX - _naveJugador.X;
+                float diffY = targetY - _naveJugador.Y;
+                if (Math.Abs(diffX) > 12f) dx = Math.Sign(diffX);
+                if (Math.Abs(diffY) > 12f) dy = Math.Sign(diffY);
+            }
 
             if (Math.Abs(dx) > 0.01f || Math.Abs(dy) > 0.01f)
             {
-                // Normalización vectorial diagonal para mantener velocidad constante
                 if (Math.Abs(dx) > 0.01f && Math.Abs(dy) > 0.01f)
                 {
                     dx *= 0.7071f;
                     dy *= 0.7071f;
                 }
-                _naveJugador.Mover(dx * 0.65f, dy * 0.65f, limites);
+                _naveJugador.Mover(dx * 0.65f * factorSensibilidad, dy * 0.65f * factorSensibilidad, limites);
                 angulo = _naveJugador.AnguloInclinacion;
 
-                // Vórtices de punta de ala al inclinarse o aladear
+                if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
+                {
+                    _tutorial.DistanciaVolada += 4.5f;
+                }
+
                 if (Math.Abs(_naveJugador.AnguloInclinacion) > 2.5f)
                 {
                     _efectosVisuales.EmitirVorticeAla(_naveJugador.X + 6f, _naveJugador.Y + _naveJugador.Alto * 0.6f);
@@ -686,7 +1303,7 @@ namespace CondorTactico
                 angulo = 0f;
             }
 
-            if (_teclasActivas.Contains(Keys.Enter) || _teclasActivas.Contains(Keys.Space))
+            if (_teclasActivas.Contains(Keys.Enter) || _teclasActivas.Contains(Keys.Space) || _teclasActivas.Contains(cfg.TeclaDisparo))
             {
                 EjecutarDisparoJugador();
             }
@@ -694,18 +1311,37 @@ namespace CondorTactico
 
         public void EjecutarDisparoJugador()
         {
-            if (!_naveJugador.Activo) return;
+            if (!_naveJugador.Activo || _juegoPausado || _juegoTerminado) return;
 
             List<Proyectil> salvas = _naveJugador.Disparar();
             if (salvas.Count > 0)
             {
+                _disparosPartida += salvas.Count;
+                if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
+                {
+                    _tutorial.DisparosRealizados++;
+                }
+
+                int nivelCanon = GestorEstadoGlobal.Perfil.ObtenerNivelMejora("MEJORA_CANON");
+                if (nivelCanon > 0)
+                {
+                    _naveJugador.EnfriamientoDisparo = Math.Max(2, _naveJugador.EnfriamientoDisparo - nivelCanon);
+                }
                 for (int i = 0; i < salvas.Count; i++)
                 {
                     _proyectiles.Add(salvas[i]);
                 }
+
+                // Si el poder Hiper-Vulcan Overdrive está activo, añadir dos proyectiles angulados extra
+                if (_ticksPoderActivo > 0)
+                {
+                    float cx = _naveJugador.X + _naveJugador.Ancho * 0.5f;
+                    _proyectiles.Add(new Proyectil(_naveJugador.IdAeronave, false, _naveJugador.Tipo, cx - 22f, _naveJugador.Y, -2.0f, -15f));
+                    _proyectiles.Add(new Proyectil(_naveJugador.IdAeronave, false, _naveJugador.Tipo, cx + 18f, _naveJugador.Y, 2.0f, -15f));
+                }
+
                 _gestorRed.EnviarEstadoAeronave(_naveJugador, disparoEnEsteTick: true);
 
-                // Efectos cinemáticos de retroceso de cañón y eyección de casquillos de 20mm
                 _efectosVisuales.Camara.AgregarTrauma(0.08f);
                 _efectosVisuales.EyectarCasquillo(
                     _naveJugador.X + _naveJugador.Ancho * 0.5f,
@@ -728,28 +1364,31 @@ namespace CondorTactico
         /// </summary>
         private void ProcesarImpactoConfirmado(AeronaveBase naveImpactada, Proyectil proyectil, ResultadoImpacto resultado)
         {
+            //Si el jugador tiene invulnerabilidad activa (Escudo Cuántico o reaparición), ignorar daño recibido
+            if (!naveImpactada.EsRival && _ticksInvulnerableJugador > 0)
+            {
+                return;
+            }
+
             bool esCritico = resultado.Zona == ZonaImpacto.CabinaCentralCritica;
             Color colorTexto = esCritico ? Color.FromArgb(255, 255, 55, 55) : Color.FromArgb(255, 255, 220, 90);
 
-            // Agregar texto flotante de impacto ("impact -10" en cabina o "impact -1" en alas)
             _textosImpacto.Add(new TextoFlotanteImpacto
             {
                 X = naveImpactada.X + (naveImpactada.Ancho * 0.5f) - 45f,
                 Y = naveImpactada.EsRival ? (naveImpactada.Y + naveImpactada.Alto + 6f) : (naveImpactada.Y - 22f),
-                Texto = esCritico ? "impact -10" : $"impact -{resultado.DanoRealVida}",
+                Texto = esCritico ? $"CRÍTICO -{resultado.DanoTotal} (x{_comboActual})" : $"impact -{resultado.DanoRealVida}",
                 ColorTexto = colorTexto,
                 TicksRestantes = 42,
                 EsCritico = esCritico
             });
 
-            // Generar partículas de impacto en el punto exacto del proyectil
             GenerarExplosionParticulas(
                 proyectil.X + proyectil.Ancho * 0.5f,
                 proyectil.Y + proyectil.Alto * 0.5f,
                 esCritico ? Color.OrangeRed : Color.DeepSkyBlue,
                 esCritico ? 22 : 10);
 
-            // Efectos visuales de trauma de cámara, destello lumínico, ondas expansivas y audio procedural
             if (esCritico)
             {
                 _efectosVisuales.Camara.AgregarTrauma(0.38f);
@@ -766,25 +1405,39 @@ namespace CondorTactico
 
             if (naveImpactada.EsRival)
             {
-                _naveJugador.PuntajeTactico += resultado.DanoTotal * 10;
+                _impactosPartida++;
+                if (esCritico) _impactosCriticosPartida++;
+
+                // Incrementar multiplicador de Combo y energía de Poder Especial
+                _ticksExpiracionCombo = 190; // ~3 segundos para mantener la racha
+                if (_impactosPartida % 2 == 0 && _comboActual < 8)
+                {
+                    _comboActual++;
+                    if (_comboActual > _comboMaximoPartida) _comboMaximoPartida = _comboActual;
+                }
+
+                _cargaPoderEspecial = Math.Min(100f, _cargaPoderEspecial + (esCritico ? 14f : 6f));
+                _naveJugador.PuntajeTactico += resultado.DanoTotal * 10 * _comboActual;
+
                 if (!naveImpactada.Activo)
                 {
                     _naveJugador.BajasConfirmadas++;
-                    GenerarExplosionParticulas(
-                        naveImpactada.X + naveImpactada.Ancho * 0.5f,
-                        naveImpactada.Y + naveImpactada.Alto * 0.5f,
-                        Color.Gold,
-                        45);
+                    _monedasRecolectadasPartida += 20;
 
+                    float cx = naveImpactada.X + naveImpactada.Ancho * 0.5f;
+                    float cy = naveImpactada.Y + naveImpactada.Alto * 0.5f;
+
+                    GenerarExplosionParticulas(cx, cy, Color.Gold, 45);
                     _efectosVisuales.Camara.AgregarTrauma(0.68f);
                     _efectosVisuales.Destello.Disparar(Color.FromArgb(255, 255, 230, 160), 0.65f);
-                    _efectosVisuales.CrearOndaExpansiva(
-                        naveImpactada.X + naveImpactada.Ancho * 0.5f,
-                        naveImpactada.Y + naveImpactada.Alto * 0.5f,
-                        radioMax: 140f,
-                        Color.Gold,
-                        velocidad: 320f);
+                    _efectosVisuales.CrearOndaExpansiva(cx, cy, radioMax: 140f, Color.Gold, velocidad: 320f);
                     SintetizadorAudioTactico.ReproducirExplosion(esCritica: true);
+
+                    // Soltar suministro aéreo al derribar enemigos
+                    if (_rng.NextDouble() < 0.65)
+                    {
+                        GenerarSuministroEnPosicion(cx, cy);
+                    }
                 }
 
                 if (esCritico)
@@ -800,6 +1453,8 @@ namespace CondorTactico
             }
             else
             {
+                // El jugador recibió daño: reiniciar racha de combo
+                _comboActual = 1;
                 if (esCritico)
                 {
                     tiempoImpactoNavex = 45;
@@ -823,15 +1478,24 @@ namespace CondorTactico
                 PaqueteRedAeronave pkt = _bufferRed[i];
                 if (pkt.IdAeronave == _naveJugador.IdAeronave) continue;
 
+                if (pkt.TipoMensaje == "REMATCH")
+                {
+                    DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
+                    return;
+                }
+
+                bool esMismoEquipo = (_modalidadActual == ModalidadPartida.Multijugador_Cooperativo) ||
+                                     (_modalidadActual == ModalidadPartida.Multijugador_2v2 && pkt.Equipo == _equipoLocal);
+
                 if (!_aeronavesRemotas.TryGetValue(pkt.IdAeronave, out AeronaveBase? remota))
                 {
                     remota = CrearInstanciaPolimorfica(
                         pkt.IdAeronave,
                         pkt.NombrePiloto,
                         pkt.Modelo,
-                        esRival: true,
+                        esRival: !esMismoEquipo,
                         pkt.X,
-                        80f,
+                        esMismoEquipo ? pkt.Y : 80f,
                         vidaPersonalizada: Math.Max(20, pkt.Vida));
                     remota.ControladaPorRed = true;
                     _aeronavesRemotas[pkt.IdAeronave] = remota;
@@ -839,7 +1503,7 @@ namespace CondorTactico
                 }
 
                 remota.X = pkt.X;
-                remota.Y = Math.Clamp(pkt.Y, 15f, 160f);
+                remota.Y = esMismoEquipo ? pkt.Y : Math.Clamp(pkt.Y, 15f, 180f);
                 remota.AnguloInclinacion = pkt.Angulo;
                 remota.Acelerando = pkt.Acelerando;
                 remota.VidaActual = pkt.Vida;
@@ -855,17 +1519,37 @@ namespace CondorTactico
             }
         }
 
-        private void VerificarEstadoPartida()
+        private void VerificarEstadoPartida(Size limites)
         {
+            // 1. Verificar si el jugador cayó y tiene vidas de reserva / checkpoint
             if (!_naveJugador.Activo || _naveJugador.VidaActual <= 0)
             {
-                _juegoTerminado = true;
-                _victoriaJugador = false;
-                _mensajeResultado = "Perdiste el Juego";
-                try { File.WriteAllText("resultado.txt", "Perdiste"); } catch { }
+                if (_vidasReserva > 0)
+                {
+                    _vidasReserva--;
+                    _usoReaparicionEnNivel = true;
+                    _naveJugador.Activo = true;
+                    _naveJugador.VidaActual = 30 + (GestorEstadoGlobal.Perfil.ObtenerNivelMejora("MEJORA_BLINDAJE") * 6);
+                    _naveJugador.EscudoActual = 12 + (GestorEstadoGlobal.Perfil.ObtenerNivelMejora("MEJORA_ESCUDO") * 4);
+                    _ticksInvulnerableJugador = 150; // 2.5s de invulnerabilidad tras reaparecer
+                    _efectosVisuales.CrearOndaExpansiva(_naveJugador.X + 50, _naveJugador.Y + 40, 180f, Color.LimeGreen);
+                    _textosImpacto.Add(new TextoFlotanteImpacto
+                    {
+                        X = _naveJugador.X - 20f,
+                        Y = _naveJugador.Y - 24f,
+                        Texto = "¡REAPARICIÓN DE EMERGENCIA ACTIVA!",
+                        ColorTexto = Color.LimeGreen,
+                        TicksRestantes = 65,
+                        EsCritico = true
+                    });
+                    return;
+                }
+
+                FinalizarPartida(victoria: false);
                 return;
             }
 
+            // 2. Verificar si quedan enemigos activos en la oleada actual
             bool quedaAlgunRival = false;
             for (int i = 0; i < _aeronaves.Count; i++)
             {
@@ -878,11 +1562,78 @@ namespace CondorTactico
 
             if (!quedaAlgunRival)
             {
-                _juegoTerminado = true;
-                _victoriaJugador = true;
-                _mensajeResultado = "Felicitaciones Ganaste !";
-                try { File.WriteAllText("resultado.txt", "Ganaste"); } catch { }
+                if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
+                {
+                    if (_tutorial.PasoActual >= 5)
+                    {
+                        GestorEstadoGlobal.Perfil.TutorialCompletado = true;
+                        FinalizarPartida(victoria: true);
+                    }
+                    return;
+                }
+
+                if (_modalidadActual == ModalidadPartida.CampanaCasual)
+                {
+                    var defNivel = GestorEstadoGlobal.NivelesCampana[Math.Clamp(_nivelCampanaActual - 1, 0, 4)];
+                    if (_oleadaActual < _totalOleadasNivel)
+                    {
+                        _oleadaActual++;
+                        DesplegarOleadaEnemiga(_oleadaActual, limites.Width);
+                        return;
+                    }
+                    else if (!_enFaseJefe)
+                    {
+                        _oleadaActual = _totalOleadasNivel + 1;
+                        DesplegarJefeFinalCampana(defNivel, limites.Width);
+                        return;
+                    }
+                }
+
+                FinalizarPartida(victoria: true);
             }
+        }
+
+        private void FinalizarPartida(bool victoria)
+        {
+            if (_juegoTerminado) return;
+            _juegoTerminado = true;
+            _victoriaJugador = victoria;
+            _mensajeResultado = victoria ? "¡MISIÓN CUMPLIDA — VICTORIA!" : "AERONAVE DERRIBADA — DERROTA";
+
+            try { File.WriteAllText("resultado.txt", victoria ? "Ganaste" : "Perdiste"); } catch { }
+
+            // Evaluar estrellas (1 a 3) según desempeño y objetivo secundario
+            int estrellas = 0;
+            if (victoria)
+            {
+                estrellas = 1;
+                if (_naveJugador.VidaActual >= 15) estrellas++;
+                if (!_usoReaparicionEnNivel && (_comboMaximoPartida >= 3 || _impactosCriticosPartida >= 2)) estrellas++;
+            }
+            _ultimasEstrellasGanadas = estrellas;
+
+            var nuevosLogros = GestorEstadoGlobal.RegistrarResultadoPartida(
+                _modalidadActual,
+                _nivelCampanaActual,
+                victoria,
+                _naveJugador.BajasConfirmadas,
+                jefeDerrotado: victoria && _enFaseJefe,
+                _disparosPartida,
+                _impactosPartida,
+                _comboMaximoPartida,
+                _naveJugador.PuntajeTactico,
+                estrellas,
+                out int monedasReg,
+                out int xpReg);
+
+            GestorEstadoGlobal.Perfil.Monedas += _monedasRecolectadasPartida;
+            GestorEstadoGlobal.GuardarTodo();
+
+            _ultimasMonedasGanadas = monedasReg + _monedasRecolectadasPartida;
+            _ultimaXPGanada = xpReg;
+            _textoLogrosRecientes = nuevosLogros.Count > 0
+                ? "🏆 LOGRO DESBLOQUEADO: " + string.Join(", ", nuevosLogros.Select(l => l.Titulo))
+                : "";
         }
 
         private void ActualizarBarraEstadoInferior()
@@ -912,40 +1663,48 @@ namespace CondorTactico
             _profiler.IniciarMedicionRender();
 
             Graphics g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.HighQuality;
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            int calidad = GestorEstadoGlobal.Configuracion.CalidadGrafica;
+            g.SmoothingMode = calidad == 0 ? SmoothingMode.HighSpeed : SmoothingMode.HighQuality;
+            g.InterpolationMode = calidad == 2 ? InterpolationMode.HighQualityBicubic : InterpolationMode.Bilinear;
 
-            int w = contiene.Width;
-            int h = contiene.Height;
+            int w = Math.Max(100, contiene.Width);
+            int h = Math.Max(100, contiene.Height);
 
             var estadoCamara = g.Save();
 
-            // 1. Aplicar sacudida de pantalla cinemática (Screen Shake) por retroceso y explosiones
+            // 1. Aplicar sacudida de pantalla cinemática (Screen Shake)
             if (Math.Abs(_efectosVisuales.Camara.OffsetX) > 0.04f || Math.Abs(_efectosVisuales.Camara.OffsetY) > 0.04f)
             {
                 g.TranslateTransform(_efectosVisuales.Camara.OffsetX, _efectosVisuales.Camara.OffsetY);
                 g.RotateTransform(_efectosVisuales.Camara.AnguloRotacion);
             }
 
-            // 2. Cielo estratosférico pre-renderizado (cero asignaciones GDI+ por frame)
-            Bitmap fondoCielo = RecursosGraficosHud.ObtenerFondoCielo(w, h);
-            g.DrawImageUnscaled(fondoCielo, 0, 0);
+            // 2. Cielo del escenario actual
+            if (_modalidadActual == ModalidadPartida.CampanaCasual && _nivelCampanaActual > 1)
+            {
+                var defNiv = GestorEstadoGlobal.NivelesCampana[Math.Clamp(_nivelCampanaActual - 1, 0, 4)];
+                using var gradEscenario = new LinearGradientBrush(new Rectangle(0, 0, w, h), defNiv.ColorCieloSuperior, defNiv.ColorCieloInferior, LinearGradientMode.Vertical);
+                g.FillRectangle(gradEscenario, 0, 0, w, h);
+            }
+            else
+            {
+                Bitmap fondoCielo = RecursosGraficosHud.ObtenerFondoCielo(w, h);
+                g.DrawImageUnscaled(fondoCielo, 0, 0);
+            }
 
-            // 3. Retícula táctica de radar de baja opacidad
+            // 3. Retícula táctica de radar
             Pen pRadar = RecursosGraficosHud.PlumaRadar;
-            for (int rx = 0; rx < w; rx += 72)
-            {
-                g.DrawLine(pRadar, rx, 0, rx, h);
-            }
-            for (float ry = _offsetRadarY; ry < h; ry += 72f)
-            {
-                g.DrawLine(pRadar, 0, ry, w, ry);
-            }
+            for (int rx = 0; rx < w; rx += 72) g.DrawLine(pRadar, rx, 0, rx, h);
+            for (float ry = _offsetRadarY; ry < h; ry += 72f) g.DrawLine(pRadar, 0, ry, w, ry);
 
-            // 4. Sombras atmosféricas suaves pseudo-3D proyectadas debajo de las aeronaves
+            // 4. Peligros Ambientales y Suministros
+            RenderizadorSistemasJuego.DibujarObstaculosAmbientales(g, _obstaculosAmbientales, h);
+            RenderizadorSistemasJuego.DibujarSuministros(g, _suministros);
+
+            // 5. Sombras atmosféricas suaves pseudo-3D
             _efectosVisuales.DibujarSombrasAeronaves(g, _aeronaves, RecursosGraficosHud.BrochaDinamica);
 
-            // 5. Nubes estratosféricas semitransparentes en paralaje
+            // 6. Nubes estratosféricas
             SolidBrush bNube = RecursosGraficosHud.BrochaNube;
             for (int i = 0; i < _nubesEstratosfera.Length; i++)
             {
@@ -955,22 +1714,28 @@ namespace CondorTactico
                 g.FillEllipse(bNube, n.X, n.Y, nw, nh);
             }
 
-            // 6. Vórtices de ala y casquillos de munición en vuelo
+            // 7. Vórtices de ala y casquillos
             _efectosVisuales.DibujarVorticesYCasquillos(g, RecursosGraficosHud.BrochaDinamica);
 
-            // 7. Dibujar Proyectiles activos
+            // 8. Proyectiles activos
             for (int i = 0; i < _proyectiles.Count; i++)
             {
                 _proyectiles[i].Dibujar(g);
             }
 
-            // 8. Dibujar Aeronaves Polimórficas (B-2 Spirit AF 82-1071 y F-35 Lightning II)
+            // 9. Aeronaves Polimórficas y Aura de Skin / Invulnerabilidad
             for (int i = 0; i < _aeronaves.Count; i++)
             {
                 _aeronaves[i].Dibujar(g);
             }
 
-            // 9. Dibujar Partículas de Combate y Postcombustión (usando brocha dinámica mutable)
+            if (_naveJugador != null && _naveJugador.Activo && _ticksInvulnerableJugador > 0)
+            {
+                using var penInv = new Pen(Color.FromArgb(180, 80, 255, 190), 2.5f);
+                g.DrawEllipse(penInv, _naveJugador.X - 8, _naveJugador.Y - 8, _naveJugador.Ancho + 16, _naveJugador.Alto + 16);
+            }
+
+            // 10. Partículas de Combate
             SolidBrush bPart = RecursosGraficosHud.BrochaDinamica;
             for (int i = 0; i < _particulas.Count; i++)
             {
@@ -980,10 +1745,10 @@ namespace CondorTactico
                 g.FillEllipse(bPart, pt.X - pt.Radio, pt.Y - pt.Radio, pt.Radio * 2f, pt.Radio * 2f);
             }
 
-            // 10. Ondas expansivas ópticas con halo refractivo
+            // 11. Ondas expansivas ópticas
             _efectosVisuales.DibujarOndasExpansivas(g, pRadar);
 
-            // 11. Dibujar Textos Flotantes de Impacto Geométrico ("impact -10")
+            // 12. Textos Flotantes de Impacto
             Font fImpacto = RecursosGraficosHud.FuenteImpacto;
             SolidBrush bSombra = RecursosGraficosHud.BrochaSombra;
             for (int i = 0; i < _textosImpacto.Count; i++)
@@ -994,28 +1759,69 @@ namespace CondorTactico
                 g.DrawString(ti.Texto, fImpacto, bPart, ti.X, ti.Y);
             }
 
-            // 12. Destello atmosférico lumínico por detonaciones
+            // 13. Destello atmosférico
             _efectosVisuales.Destello.Dibujar(g, w, h, RecursosGraficosHud.BrochaDinamica);
 
-            // 13. HUD militar holográfico de 5ª generación (horizonte, cabeceo, radar AESA, retícula PIPER)
-            if (_naveJugador != null)
+            // 14. HUD militar holográfico de 5ª generación
+            if (_naveJugador != null && GestorEstadoGlobal.Configuracion.MostrarHudMilitar)
             {
                 _hudMilitar.Dibujar(g, w, h, _naveJugador, RecursosGraficosHud.BrochaDinamica, pRadar);
             }
 
-            // Restaurar cámara antes de pintar controles estáticos
             g.Restore(estadoCamara);
 
-            // 14. Dibujar Tarjeta Táctica Inferior Izquierda de la Aeronave Activa
-            DibujarFichaAeronaveActiva(g, 10, h - 72);
+            // 15. Barra de Jefe Final o Instrucción de Tutorial en la parte superior
+            if (_modalidadActual == ModalidadPartida.TutorialInteractivo)
+            {
+                using var brTut = new SolidBrush(Color.FromArgb(220, 10, 28, 48));
+                using var penTut = new Pen(Color.Cyan, 1.5f);
+                g.FillRectangle(brTut, (w - 680) / 2, 10, 680, 36);
+                g.DrawRectangle(penTut, (w - 680) / 2, 10, 680, 36);
+                g.DrawString(_tutorial.ObtenerInstruccionActual(), RecursosGraficosHud.FuenteFichaTitulo, Brushes.White, (w - 680) / 2 + 14, 19);
+            }
+            else if (_enFaseJefe && _naveRivalPrincipal != null && _naveRivalPrincipal.Activo)
+            {
+                RenderizadorSistemasJuego.DibujarBarraJefeFinal(g, w, _nombreJefeActual, _naveRivalPrincipal.VidaActual, _vidaMaximaJefeActual);
+            }
 
-            // 15. Dibujar Overlay de Profiling, Big-O y Telemetría Cliente-Servidor (Tecla F3)
+            // 16. Panel de Habilidad Especial [Q], Combo, Monedas y Oleada
+            string textoFase = _modalidadActual switch
+            {
+                ModalidadPartida.CampanaCasual => _enFaseJefe
+                    ? $"NIVEL {_nivelCampanaActual} — FASE JEFE FINAL"
+                    : $"NIVEL {_nivelCampanaActual} — OLEADA {_oleadaActual}/{_totalOleadasNivel}",
+                ModalidadPartida.TutorialInteractivo => $"TUTORIAL PASO {_tutorial.PasoActual}/5",
+                ModalidadPartida.Multijugador_1v1 => "MULTIJUGADOR 1 VS 1",
+                ModalidadPartida.Multijugador_2v2 => $"MULTIJUGADOR 2 VS 2 (EQ {_equipoLocal})",
+                ModalidadPartida.Multijugador_Cooperativo => "MULTIJUGADOR COOPERATIVO",
+                _ => "BATALLA LIBRE"
+            };
+
+            RenderizadorSistemasJuego.DibujarPanelEstadoTacticoInferior(
+                g,
+                w,
+                h,
+                _cargaPoderEspecial,
+                _ticksPoderActivo,
+                _comboActual,
+                _monedasRecolectadasPartida,
+                _vidasReserva,
+                _checkpointJefeAlcanzado,
+                textoFase);
+
+            // 17. Overlay de Profiling (Tecla F3)
             if (_mostrarHudProfiling && _naveJugador != null)
             {
                 _profiler.DibujarHudProfiling(g, _gestorRed, _naveJugador, Math.Max(10, w - 288), 10);
             }
 
-            // 16. Banner de Fin de Misión (Victoria / Derrota)
+            // 18. Menú de Pausa Superpuesto
+            if (_juegoPausado && !_juegoTerminado)
+            {
+                RenderizadorSistemasJuego.DibujarMenuPausaSuperpuesto(g, w, h, _checkpointJefeAlcanzado);
+            }
+
+            // 19. Pantalla Completa de Resumen de Fin de Misión (Victoria / Derrota)
             if (_juegoTerminado)
             {
                 DibujarBannerResultado(g, w, h);
@@ -1024,24 +1830,10 @@ namespace CondorTactico
             _profiler.FinalizarMedicionRender();
         }
 
-        private void DibujarFichaAeronaveActiva(Graphics g, int x, int y)
-        {
-            if (_naveJugador == null) return;
-
-            int boxW = 560;
-            int boxH = 60;
-            g.FillRectangle(RecursosGraficosHud.BrochaFichaFondo, x, y, boxW, boxH);
-            g.DrawRectangle(RecursosGraficosHud.PlumaFichaBorde, x, y, boxW, boxH);
-
-            g.DrawString($"AERONAVE ACTIVA: {_naveJugador.NombreModelo} [{_naveJugador.Matricula}]", RecursosGraficosHud.FuenteFichaTitulo, RecursosGraficosHud.BrochaCian, x + 8, y + 6);
-            g.DrawString(_naveJugador.ObtenerFichaTecnica(), RecursosGraficosHud.FuenteFichaTexto, RecursosGraficosHud.BrochaBlanco, x + 8, y + 23);
-            g.DrawString("CONTROLES: [WASD/Flechas] Volar | [Enter/Espacio] Disparo | [1/2] Naves | [H] HUD Militar | [M] Audio | [F3] Profiling", RecursosGraficosHud.FuenteFichaTexto, RecursosGraficosHud.BrochaBlanco, x + 8, y + 40);
-        }
-
         private void DibujarBannerResultado(Graphics g, int w, int h)
         {
-            int bw = 430;
-            int bh = 130;
+            int bw = 540;
+            int bh = 240;
             int bx = (w - bw) / 2;
             int by = (h - bh) / 2;
 
@@ -1051,9 +1843,22 @@ namespace CondorTactico
             SolidBrush bTitulo = RecursosGraficosHud.BrochaDinamica;
             bTitulo.Color = _victoriaJugador ? Color.FromArgb(255, 70, 230, 255) : Color.FromArgb(255, 255, 80, 80);
 
-            g.DrawString(_mensajeResultado, RecursosGraficosHud.FuenteBannerTitulo, bTitulo, bx + 55, by + 22);
-            g.DrawString($"Puntaje Táctico: {_naveJugador.PuntajeTactico} pts | Bajas: {_naveJugador.BajasConfirmadas}", RecursosGraficosHud.FuenteBannerSub, RecursosGraficosHud.BrochaBlanco, bx + 55, by + 66);
-            g.DrawString("Presiona [R] o el botón [🚀 NUEVA MISIÓN] para reiniciar", RecursosGraficosHud.FuenteBannerSub, RecursosGraficosHud.BrochaBlanco, bx + 28, by + 92);
+            string txtEstrellas = new string('★', _ultimasEstrellasGanadas) + new string('☆', 3 - _ultimasEstrellasGanadas);
+            g.DrawString(_mensajeResultado, RecursosGraficosHud.FuenteBannerTitulo, bTitulo, bx + 28, by + 18);
+            g.DrawString($"Calificación: {txtEstrellas}  |  Puntaje: {_naveJugador.PuntajeTactico:N0} pts  |  Bajas: {_naveJugador.BajasConfirmadas}  |  Combo Máx: x{_comboMaximoPartida}", RecursosGraficosHud.FuenteBannerSub, RecursosGraficosHud.BrochaBlanco, bx + 28, by + 62);
+            g.DrawString($"Recompensas: 🪙 +{_ultimasMonedasGanadas} Créditos Tácticos   |   +{_ultimaXPGanada} XP", RecursosGraficosHud.FuenteBannerSub, Brushes.Gold, bx + 28, by + 92);
+
+            if (!string.IsNullOrEmpty(_textoLogrosRecientes))
+            {
+                g.DrawString(_textoLogrosRecientes, RecursosGraficosHud.FuenteFichaTitulo, Brushes.LimeGreen, bx + 28, by + 122);
+            }
+
+            string acciones = (_victoriaJugador && _modalidadActual == ModalidadPartida.CampanaCasual && _nivelCampanaActual < 5)
+                ? "[N] Siguiente Nivel   |   [R] Repetir Misión   |   [M] Volver al Menú Principal"
+                : "[R] Reintentar / Solicitar Revancha   |   [M] Volver al Menú Principal";
+
+            g.DrawString(acciones, RecursosGraficosHud.FuenteBannerSub, Brushes.Cyan, bx + 28, by + 162);
+            g.DrawString($"Saldo Total: 🪙 {GestorEstadoGlobal.Perfil.Monedas:N0}  ·  Rango: {GestorEstadoGlobal.Perfil.ObtenerNombreRangoMilitar()}", RecursosGraficosHud.FuenteFichaTexto, Brushes.Silver, bx + 28, by + 196);
         }
 
         // =========================================================================
@@ -1084,9 +1889,9 @@ namespace CondorTactico
         {
             float cy = nave.EsRival ? nave.Y + 8f : nave.Y + nave.Alto - 10f;
             float cx = nave.X + nave.Ancho * 0.5f;
-            Color cEstela = nave.Tipo == TipoAeronave.B2_Spirit_Stealth
-                ? Color.FromArgb(200, 60, 210, 255)
-                : Color.FromArgb(200, 255, 165, 45);
+            Color cEstela = nave.EsRival
+                ? Color.FromArgb(200, 255, 120, 45)
+                : GestorEstadoGlobal.ObtenerColorSkinEquipada();
 
             _particulas.Add(new ParticulaCombate
             {
@@ -1142,9 +1947,63 @@ namespace CondorTactico
         // =========================================================================
         private void EventoKeyDown(object? sender, KeyEventArgs e)
         {
+            // Teclas de Pausa y Menú
+            if (e.KeyCode == Keys.P || e.KeyCode == Keys.Escape)
+            {
+                AlternarPausa();
+                return;
+            }
+
+            if (_juegoPausado)
+            {
+                if (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter) AlternarPausa();
+                else if (e.KeyCode == Keys.K && _checkpointJefeAlcanzado) DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
+                else if (e.KeyCode == Keys.R) { _checkpointJefeAlcanzado = false; DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual); }
+                else if (e.KeyCode == Keys.C) { using var dlg = new VentanaCentroMando(PestanaCentroMando.Configuracion); dlg.ShowDialog(this); }
+                else if (e.KeyCode == Keys.T) { using var dlg = new VentanaCentroMando(PestanaCentroMando.Tienda); dlg.ShowDialog(this); AplicarMejorasANaveJugador(); }
+                else if (e.KeyCode == Keys.M || e.KeyCode == Keys.Back) { GestorEstadoGlobal.GuardarTodo(); Close(); }
+                return;
+            }
+
+            if (_juegoTerminado)
+            {
+                if (e.KeyCode == Keys.N && _victoriaJugador && _modalidadActual == ModalidadPartida.CampanaCasual && _nivelCampanaActual < 5)
+                {
+                    _nivelCampanaActual++;
+                    _checkpointJefeAlcanzado = false;
+                    DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
+                    return;
+                }
+                if (e.KeyCode == Keys.R)
+                {
+                    if (!_victoriaJugador && _checkpointJefeAlcanzado)
+                    {
+                        // Reintentar desde el checkpoint del jefe
+                        DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
+                    }
+                    else
+                    {
+                        _checkpointJefeAlcanzado = false;
+                        _gestorRed.EnviarMensajeControl("REMATCH", _naveJugador.IdAeronave, _nombrePilotoActual, _modeloJugadorActual);
+                        DesplegarMisionAerea(_modeloJugadorActual, _modeloRivalActual, _incluirEscoltaActual);
+                    }
+                    return;
+                }
+                if (e.KeyCode == Keys.M || e.KeyCode == Keys.Back)
+                {
+                    GestorEstadoGlobal.GuardarTodo();
+                    Close();
+                    return;
+                }
+            }
+
             _teclasActivas.Add(e.KeyCode);
 
-            if (e.KeyCode == Keys.D1 || e.KeyCode == Keys.NumPad1)
+            if (e.KeyCode == Keys.Q || e.KeyCode == Keys.E || e.KeyCode == GestorEstadoGlobal.Configuracion.TeclaPoderEspecial)
+            {
+                IntentarActivarPoderEspecial();
+            }
+            else if (e.KeyCode == Keys.D1 || e.KeyCode == Keys.NumPad1)
             {
                 CambiarAeronaveJugadorDirecto(TipoAeronave.B2_Spirit_Stealth);
             }
@@ -1186,39 +2045,34 @@ namespace CondorTactico
 
         public void ActividadTecla(object sender, KeyEventArgs e)
         {
-            if (_naveJugador == null || !_naveJugador.Activo) return;
+            if (_naveJugador == null || !_naveJugador.Activo || _juegoPausado) return;
 
             Size lim = contiene.ClientSize;
             switch (e.KeyValue)
             {
-                case 37: // Flecha izquierda
+                case 37:
                     _naveJugador.Mover(-0.5f, 0f, lim);
                     angulo = -15f;
                     break;
-                case 38: // Flecha arriba
+                case 38:
                     _naveJugador.Mover(0f, -0.5f, lim);
                     angulo = 0f;
                     break;
-                case 39: // Flecha derecha
+                case 39:
                     _naveJugador.Mover(0.5f, 0f, lim);
                     angulo = 15f;
                     break;
-                case 40: // Flecha abajo
+                case 40:
                     _naveJugador.Mover(0f, 0.5f, lim);
                     angulo = 0f;
                     break;
-                case 13: // Enter: Disparo polimórfico
-                    EjecutarDisparoJugador();
-                    break;
-                case 32: // Espacio: Disparo polimórfico
+                case 13:
+                case 32:
                     EjecutarDisparoJugador();
                     break;
             }
         }
 
-        /// <summary>
-        /// Método público preservado por compatibilidad histórica con la versión base.
-        /// </summary>
         public void CrearMisil(int AngRotar, Color pintar, string nombre, int x, int y)
         {
             bool esRival = (nombre == "Rival" || AngRotar == 180);
@@ -1233,9 +2087,6 @@ namespace CondorTactico
                 esRival ? 11f : -13f));
         }
 
-        /// <summary>
-        /// Método público preservado por compatibilidad histórica con la versión base.
-        /// </summary>
         public void CrearNave(PictureBox Avion, int AngRotar, int Tipox, Color Pintar, int Vida)
         {
             bool esRival = (AngRotar == 180);
@@ -1274,6 +2125,7 @@ namespace CondorTactico
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            tiempo.Stop();
             _gestorRed.Dispose();
             base.OnFormClosing(e);
         }

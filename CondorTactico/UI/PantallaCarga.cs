@@ -713,7 +713,7 @@ namespace CondorTactico.UI
             g.DrawRectangle(_plumaDinamica, 0, 0, W - 1, H - 1);
 
             _brochaDinamica.Color = Color.FromArgb(200, 120, 200, 255);
-            g.DrawString("CÓNDOR TÁCTICO // SISTEMA DE ARRANQUE v3.3.0", _fEsquina, _brochaDinamica, m + 12, m + 6);
+            g.DrawString("CÓNDOR TÁCTICO", _fEsquina, _brochaDinamica, m + 12, m + 6);
 
             const string derecha = "UNAJ · INGENIERÍA DE SISTEMAS";
             SizeF tam = g.MeasureString(derecha, _fEsquina);
