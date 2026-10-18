@@ -14,6 +14,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
+using System.Linq;
 
 namespace CondorTactico
 {
@@ -116,9 +118,40 @@ namespace CondorTactico
 
             if (acel == null)
             {
-                Bitmap bmpMisil = (tipo == TipoAeronave.B2_Spirit_Stealth)
-                    ? B2SpiritModel.DibujarMisilB2(20, 40, rotacionBase, esRival, 4)
-                    : F35Model.DibujarMisil(18, 38, rotacionBase, esRival, 4);
+                int wM = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 20 : 18;
+                int hM = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 40 : 38;
+                Bitmap bmpMisil;
+
+                string[] rutasMisil = new[]
+                {
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "sprites", "misil_player_hd.png"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "assets", "sprites", "misil_player_hd.png"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "assets", "sprites", "misil_player_hd.png"),
+                    @"c:\Users\kreiv\OneDrive\Documentos\JuegoAviones\assets\sprites\misil_player_hd.png"
+                };
+                string? rutaMisil = rutasMisil.FirstOrDefault(File.Exists);
+
+                if (rutaMisil != null)
+                {
+                    using var bmpSrc = new Bitmap(rutaMisil);
+                    bmpMisil = new Bitmap(wM, hM, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    using var gfx = Graphics.FromImage(bmpMisil);
+                    gfx.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    gfx.SmoothingMode = SmoothingMode.HighQuality;
+                    if (esRival)
+                    {
+                        gfx.TranslateTransform(wM * 0.5f, hM * 0.5f);
+                        gfx.RotateTransform(180);
+                        gfx.TranslateTransform(-wM * 0.5f, -hM * 0.5f);
+                    }
+                    gfx.DrawImage(bmpSrc, new Rectangle(0, 0, wM, hM));
+                }
+                else
+                {
+                    bmpMisil = (tipo == TipoAeronave.B2_Spirit_Stealth)
+                        ? B2SpiritModel.DibujarMisilB2(wM, hM, rotacionBase, esRival, 4)
+                        : F35Model.DibujarMisil(wM, hM, rotacionBase, esRival, 4);
+                }
 
                 lock (_cacheMisiles) _cacheMisiles[(tipo, esRival)] = bmpMisil;
                 GestorRecursosAsincrono.Instancia.RegistrarRecursoListo(new RecursoGrafico($"sprite_misil_{tipo}_{bando}", bmpMisil));
@@ -128,9 +161,43 @@ namespace CondorTactico
             int ancho = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 132 : 84;
             int alto = (tipo == TipoAeronave.B2_Spirit_Stealth) ? 92 : 118;
 
-            using (Bitmap bmpBase = (tipo == TipoAeronave.B2_Spirit_Stealth)
-                ? B2SpiritModel.DibujarB2Spirit(ancho, alto, rotacionBase, esRival, acel.Value, 4)
-                : F35Model.DibujarF35(ancho, alto, rotacionBase, esRival, acel.Value, 4))
+            Bitmap bmpBase;
+            string nombreRender = (tipo == TipoAeronave.B2_Spirit_Stealth) ? "B2_Spirit_Render_UltraHD.png" : "F35_Render_UltraHD.png";
+            string[] posiblesRutas = new[]
+            {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "renders", nombreRender),
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "assets", "renders", nombreRender),
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "assets", "renders", nombreRender),
+                Path.Combine(@"c:\Users\kreiv\OneDrive\Documentos\JuegoAviones\assets\renders", nombreRender)
+            };
+            string? rutaEncontrada = posiblesRutas.FirstOrDefault(File.Exists);
+
+            if (rutaEncontrada != null)
+            {
+                using var bmpOriginal = new Bitmap(rutaEncontrada);
+                bmpBase = new Bitmap(ancho, alto, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using (var gfx = Graphics.FromImage(bmpBase))
+                {
+                    gfx.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    gfx.SmoothingMode = SmoothingMode.HighQuality;
+                    gfx.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    if (esRival)
+                    {
+                        gfx.TranslateTransform(ancho * 0.5f, alto * 0.5f);
+                        gfx.RotateTransform(180);
+                        gfx.TranslateTransform(-ancho * 0.5f, -alto * 0.5f);
+                    }
+                    gfx.DrawImage(bmpOriginal, new Rectangle(0, 0, ancho, alto));
+                }
+            }
+            else
+            {
+                bmpBase = (tipo == TipoAeronave.B2_Spirit_Stealth)
+                    ? B2SpiritModel.DibujarB2Spirit(ancho, alto, rotacionBase, esRival, acel.Value, 4)
+                    : F35Model.DibujarF35(ancho, alto, rotacionBase, esRival, acel.Value, 4);
+            }
+
+            using (bmpBase)
             {
                 foreach (int ang in _angulos)
                 {

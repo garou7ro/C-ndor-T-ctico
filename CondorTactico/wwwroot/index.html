@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cóndor Táctico 3D</title>
+    <link rel="stylesheet" href="css/estilos.css" />
+    <script>
+        window.__jsErrors = [];
+        const _origWarn = console.warn;
+        console.warn = function (...args) {
+            window.__jsErrors.push('[WARN] ' + args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
+            _origWarn.apply(console, args);
+        };
+        const _origErr = console.error;
+        console.error = function (...args) {
+            window.__jsErrors.push('[ERROR] ' + args.map(a => (typeof a === 'object' ? JSON.stringify(a) : a)).join(' '));
+            _origErr.apply(console, args);
+        };
+        window.addEventListener('error', function (e) {
+            window.__jsErrors.push('[EXCEPTION] ' + e.message + ' at ' + e.filename + ':' + e.lineno);
+            console.error('[GLOBAL ERROR]', e.message, e.filename, e.lineno);
+        });
+    </script>
+</head>
+<body>
+    <!-- Lienzo 3D WebGL 2.0 Acelerado por GPU -->
+    <canvas id="lienzo-3d"></canvas>
+    <div class="vineta-3d"></div>
+    <div class="malla-holografica-hud"></div>
+
+    <!-- 1. PANTALLA DE INTRODUCCIÓN CINEMÁTICA 3D (SIN BOTÓN, "PRESIONA CUALQUIER TECLA") -->
+    <div id="pantalla-carga">
+        <div class="intro-marco-superior">
+            <span class="intro-tag">SISTEMA DE VUELO 3D · EDICIÓN ESPECIAL</span>
+        </div>
+
+        <div class="logo-intro-contenedor">
+            <!-- Anillos Astrolabio / Radar SVG Propios -->
+            <svg viewBox="0 0 260 260" class="astrolabio-svg-1">
+                <circle cx="130" cy="130" r="120" fill="none" stroke="rgba(0,229,255,0.35)" stroke-width="1.5" stroke-dasharray="18 8 4 8" />
+                <circle cx="130" cy="130" r="106" fill="none" stroke="rgba(255,184,0,0.45)" stroke-width="2" stroke-dasharray="40 16" />
+                <polygon points="130,4 135,16 125,16" fill="#ffb800" />
+                <polygon points="130,256 135,244 125,244" fill="#00e5ff" />
+                <polygon points="4,130 16,135 16,125" fill="#00e5ff" />
+                <polygon points="256,130 244,135 244,125" fill="#ffb800" />
+            </svg>
+            <svg viewBox="0 0 260 260" class="astrolabio-svg-2">
+                <polygon points="130,18 227,74 227,186 130,242 33,186 33,74" fill="none" stroke="rgba(0,229,255,0.28)" stroke-width="1.5" />
+                <circle cx="130" cy="130" r="88" fill="none" stroke="rgba(255,213,79,0.5)" stroke-width="1.5" stroke-dasharray="6 10" />
+            </svg>
+            <img src="assets/logo.png" alt="Emblema Cóndor Táctico" class="logo-intro-img" />
+        </div>
+
+        <h1 class="titulo-intro">CÓNDOR TÁCTICO</h1>
+        <div class="subtitulo-intro-cinta">
+            <span class="linea-decorativa"></span>
+            <p class="subtitulo-intro">COMBATE AÉREO EN 3D · ACCIÓN Y AVENTURA</p>
+            <span class="linea-decorativa"></span>
+        </div>
+
+        <div class="contenedor-progreso-intro">
+            <div class="barra-carga-marco">
+                <div id="barra-carga-fill" class="barra-carga-relleno"></div>
+            </div>
+            <div id="texto-carga" class="texto-estado-carga">INICIANDO ESCENARIOS Y MODELOS 3D...</div>
+        </div>
+    </div>
+
+    <!-- 2. MENÚ PRINCIPAL AAA SOBRE EL HANGAR 3D INTERACTIVO -->
+    <div id="capa-menu-principal" class="oculta">
+        <!-- Barra Superior de Mando con Emblema Oficial, Rango y Monedas -->
+        <header class="cabecera-menu">
+            <div class="marca-juego">
+                <div class="marco-logo-cabecera">
+                    <img src="assets/logo.png" alt="Logo" class="logo-cabecera" />
+                </div>
+                <div class="marca-textos">
+                    <div class="marca-super-tag">SISTEMA TÁCTICO DE DEFENSA AEROESPACIAL · UNAJ</div>
+                    <h1>CÓNDOR TÁCTICO <span class="badge-3d">GEN-V 3D</span></h1>
+                </div>
+            </div>
+
+            <div class="perfil-barra-derecha">
+                <button class="btn-pantalla-completa" onclick="InterfazJuego.alternarPantallaCompleta()" title="Alternar Pantalla Completa (F11)">
+                    <span data-ico="pantalla"></span>
+                    <span>PANTALLA COMPLETA</span>
+                </button>
+
+                <button class="btn-recompensa-diaria" onclick="InterfazJuego.reclamarRecompensaDiaria()">
+                    <span data-ico="regalo"></span>
+                    <span>SUMINISTRO DIARIO</span>
+                </button>
+
+                <div class="tarjeta-piloto-top">
+                    <div class="info-nivel-top">
+                        <div class="info-nivel-linea">
+                            <span id="ui-nombre-piloto">CÓNDOR-01</span>
+                            <span id="ui-rango-piloto" class="rango-badge">NIVEL 1 · PILOTO NOVATO</span>
+                        </div>
+                        <div class="xp-barra-mini">
+                            <div id="ui-barra-xp" class="xp-barra-mini-fill"></div>
+                        </div>
+                    </div>
+                    <div class="saldo-monedas-top">
+                        <span data-ico="moneda"></span>
+                        <span id="ui-monedas-top">600</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Cuerpo Central: Consola de Operaciones a la Izquierda + Avión 3D al Centro + Telemetría a la Derecha -->
+        <main class="cuerpo-menu">
+            <nav class="columna-botones-menu" aria-label="Consola de Operaciones">
+                <!-- MÓDULO PRINCIPAL DE DESPEGUE (HERO) -->
+                <div class="etiqueta-seccion-menu"><span>01 // OPERACIONES DE VUELO</span><span class="linea-sec"></span></div>
+
+                <button class="btn-menu-item destacado hero-launch" onclick="InterfazJuego.abrirModal('casual')">
+                    <div class="icono-btn-menu hero-ico" data-ico="jugar"></div>
+                    <div class="texto-btn-menu">
+                        <div class="hero-tag-row">
+                            <span class="hero-status-dot"></span>
+                            <span class="hero-kicker">SISTEMAS DE COMBATE EN LÍNEA</span>
+                        </div>
+                        <strong>JUGAR AHORA · DESPEGUE TÁCTICO</strong>
+                        <span>Misiones de campaña, vuelo libre o entrenamiento guiado</span>
+                    </div>
+                </button>
+
+                <button class="btn-menu-item" onclick="InterfazJuego.abrirModal('casual')">
+                    <div class="icono-btn-menu" data-ico="campana"></div>
+                    <div class="texto-btn-menu">
+                        <strong>MODO CASUAL (CAMPAÑA)</strong>
+                        <span>Supera los 5 sectores estratégicos y abate a los Jefes</span>
+                    </div>
+                </button>
+
+                <button class="btn-menu-item" onclick="InterfazJuego.abrirModal('multijugador')">
+                    <div class="icono-btn-menu" data-ico="multijugador"></div>
+                    <div class="texto-btn-menu">
+                        <strong>MODO MULTIJUGADOR</strong>
+                        <span>Escaramuza 1v1, 2v2 o Cooperativo en red LAN / Internet</span>
+                    </div>
+                </button>
+
+                <!-- MÓDULO DE INGENIERÍA Y HANGAR (2 COLUMNAS) -->
+                <div class="etiqueta-seccion-menu"><span>02 // INGENIERÍA Y ARSENAL</span><span class="linea-sec"></span></div>
+
+                <div class="grilla-comando-doble">
+                    <button class="btn-menu-item compacto" onclick="InterfazJuego.abrirModal('tienda')">
+                        <div class="icono-btn-menu" data-ico="tienda"></div>
+                        <div class="texto-btn-menu">
+                            <strong>TIENDA DE MEJORAS</strong>
+                            <span>Aviones, blindaje y armas</span>
+                        </div>
+                    </button>
+
+                    <button class="btn-menu-item compacto" onclick="InterfazJuego.abrirModal('inventario')">
+                        <div class="icono-btn-menu" data-ico="hangar"></div>
+                        <div class="texto-btn-menu">
+                            <strong>MI HANGAR 3D</strong>
+                            <span>Equipar caza y superpoder</span>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- MÓDULO DE REGISTRO Y SISTEMA (CUADRÍCULA TÁCTICA 2x2) -->
+                <div class="etiqueta-seccion-menu"><span>03 // MANDO Y REGISTRO</span><span class="linea-sec"></span></div>
+
+                <div class="grilla-comando-doble">
+                    <button class="btn-menu-item compacto" onclick="InterfazJuego.abrirModal('progreso')">
+                        <div class="icono-btn-menu" data-ico="progreso"></div>
+                        <div class="texto-btn-menu">
+                            <strong>PROGRESIÓN</strong>
+                            <span>Rango, nivel y XP</span>
+                        </div>
+                    </button>
+
+                    <button class="btn-menu-item compacto" onclick="InterfazJuego.abrirModal('logros')">
+                        <div class="icono-btn-menu" data-ico="logros"></div>
+                        <div class="texto-btn-menu">
+                            <strong>LOGROS Y RÉCORDS</strong>
+                            <span>Medallas de combate</span>
+                        </div>
+                    </button>
+
+                    <button class="btn-menu-item compacto" onclick="InterfazJuego.abrirModal('ajustes')">
+                        <div class="icono-btn-menu" data-ico="ajustes"></div>
+                        <div class="texto-btn-menu">
+                            <strong>CONFIGURACIÓN</strong>
+                            <span>Audio, control y video</span>
+                        </div>
+                    </button>
+
+                    <button class="btn-menu-item compacto peligro" onclick="InterfazJuego.salirDelJuego()">
+                        <div class="icono-btn-menu" data-ico="salir"></div>
+                        <div class="texto-btn-menu">
+                            <strong>SALIR DEL JUEGO</strong>
+                            <span>Guardar y cerrar</span>
+                        </div>
+                    </button>
+                </div>
+            </nav>
+
+            <!-- Panel Derecho: Ficha Holográfica de la Aeronave 3D en Hangar -->
+            <aside class="tarjeta-hangar-derecha">
+                <div class="esquina-hud tl"></div>
+                <div class="esquina-hud tr"></div>
+                <div class="esquina-hud bl"></div>
+                <div class="esquina-hud br"></div>
+
+                <div class="cabecera-ficha-hangar">
+                    <div class="etiqueta-hangar">
+                        <span data-ico="radar"></span>
+                        <span>TELEMETRÍA DE PLATAFORMA 3D</span>
+                    </div>
+                    <span class="badge-estado-hangar">LISTO</span>
+                </div>
+
+                <div id="hangar-nombre-nave" class="nombre-nave-hangar">CÓNDOR DORADO X</div>
+                <div id="hangar-sub-nave" class="sub-nave-hangar">Pintura: Azul Cielo Eléctrico · Poder: Onda Paralizante</div>
+
+                <div class="estadisticas-nave-barras">
+                    <div class="fila-stat">
+                        <div class="fila-stat-top">
+                            <span class="stat-label-ico"><span data-ico="vida"></span> INTEGRIDAD ESTRUCTURAL</span>
+                            <span id="stat-txt-vida" class="stat-val">120 PTS</span>
+                        </div>
+                        <div class="barra-stat-fondo"><div id="stat-bar-vida" class="barra-stat-fill" style="width:60%;"></div></div>
+                    </div>
+                    <div class="fila-stat">
+                        <div class="fila-stat-top">
+                            <span class="stat-label-ico"><span data-ico="escudo"></span> ESCUDO DEFLECTOR</span>
+                            <span id="stat-txt-escudo" class="stat-val">50 PTS</span>
+                        </div>
+                        <div class="barra-stat-fondo"><div id="stat-bar-escudo" class="barra-stat-fill escudo" style="width:45%;"></div></div>
+                    </div>
+                    <div class="fila-stat">
+                        <div class="fila-stat-top">
+                            <span class="stat-label-ico"><span data-ico="velocidad"></span> EMPUJE VECTORIAL</span>
+                            <span id="stat-txt-vel" class="stat-val">100%</span>
+                        </div>
+                        <div class="barra-stat-fondo"><div id="stat-bar-vel" class="barra-stat-fill oro" style="width:55%;"></div></div>
+                    </div>
+                    <div class="fila-stat">
+                        <div class="fila-stat-top">
+                            <span class="stat-label-ico"><span data-ico="fuego"></span> CADENCIA DE CAÑONES</span>
+                            <span id="stat-txt-fuego" class="stat-val">100%</span>
+                        </div>
+                        <div class="barra-stat-fondo"><div id="stat-bar-fuego" class="barra-stat-fill" style="width:55%;"></div></div>
+                    </div>
+                </div>
+
+                <div class="acciones-hangar-rapidas">
+                    <button class="btn-secundario-hangar" onclick="InterfazJuego.cambiarNaveRapidoHangar()">
+                        <span data-ico="rotar"></span>
+                        <span>ROTAR CAZA 3D</span>
+                    </button>
+                    <button class="btn-secundario-hangar primario" onclick="InterfazJuego.lanzarPartida('CampanaCasual', 1)">
+                        <span data-ico="jugar"></span>
+                        <span>DESPEGUE RÁPIDO</span>
+                    </button>
+                </div>
+            </aside>
+        </main>
+
+        <footer class="pie-menu">
+            <div class="pie-controles">
+                <span class="badge-tecla">WASD / FLECHAS</span><span>MANIOBRA 3D</span>
+                <span class="separador-pie">◆</span>
+                <span class="badge-tecla">ESPACIO / CLIC IZQ</span><span>CAÑONES DE PLASMA</span>
+                <span class="separador-pie">◆</span>
+                <span class="badge-tecla">TECLA Q / CLIC DER</span><span>SISTEMA TÁCTICO [Q]</span>
+                <span class="separador-pie">◆</span>
+                <span class="badge-tecla">SHIFT</span><span>TONEL EVASIVO</span>
+                <span class="separador-pie">◆</span>
+                <span class="badge-tecla">P / ESC</span><span>PAUSA TÁCTICA</span>
+            </div>
+            <div class="pie-guardado"><span class="dot-online"></span> TELEMETRÍA Y GUARDADO ACTIVO</div>
+        </footer>
+    </div>
+
+    <!-- 3. CONTENEDOR DE VENTANAS MODALES TÁCTICAS -->
+    <div id="contenedor-modal" class="oculta">
+        <div class="ventana-modal">
+            <div class="esquina-hud tl"></div>
+            <div class="esquina-hud tr"></div>
+            <div class="esquina-hud bl"></div>
+            <div class="esquina-hud br"></div>
+            <div class="cabecera-modal">
+                <h2 id="modal-titulo">SECCIÓN</h2>
+                <button class="btn-cerrar-modal" onclick="InterfazJuego.cerrarModal()">
+                    <span data-ico="cerrar"></span>
+                    <span>VOLVER AL MANDO</span>
+                </button>
+            </div>
+            <div id="modal-pestanas" class="barra-pestanas-modal"></div>
+            <div id="modal-cuerpo" class="cuerpo-modal"></div>
+        </div>
+    </div>
+
+    <!-- 4. HUD DE COMBATE AÉREO 3D (SISTEMA DE AVIÓNICA DE 5.ª GENERACIÓN) -->
+    <div id="hud-combate" class="oculta">
+        <!-- Viñeta roja de daño recibido / casco crítico -->
+        <div id="hud-vineta-dano" class="hud-vineta-dano"></div>
+        <!-- Capa de Proyección 3D->2D para Barras de Salud de Todos los Enemigos -->
+        <div id="hud-barras-enemigos-mundo" class="capa-barras-enemigos-mundo"></div>
+
+        <div class="hud-fila-superior">
+            <!-- Panel Izquierdo: Estado Estructural y Potenciadores Activos -->
+            <div class="hud-columna-izquierda">
+                <div class="hud-panel-jugador">
+                    <div class="hud-panel-tag">SYS // INTEGRIDAD DE AERONAVE</div>
+                    <div class="hud-barra-grupo">
+                        <div class="hud-barra-label">
+                            <span class="stat-label-ico"><span data-ico="vida"></span> CASCO BLINDADO</span>
+                            <span id="hud-txt-vida">100%</span>
+                        </div>
+                        <div class="hud-barra-track"><div id="hud-fill-vida" class="hud-barra-vida"></div></div>
+                    </div>
+                    <div class="hud-barra-grupo">
+                        <div class="hud-barra-label">
+                            <span class="stat-label-ico"><span data-ico="escudo"></span> ESCUDO DEFLECTOR</span>
+                            <span id="hud-txt-escudo">100%</span>
+                        </div>
+                        <div class="hud-barra-track"><div id="hud-fill-escudo" class="hud-barra-escudo"></div></div>
+                    </div>
+                    <div class="hud-vidas-extra">
+                        <span id="hud-txt-vidas-extra">RESERVA: 1</span>
+                        <span class="hud-tag-armas">ARMAS: EN LÍNEA</span>
+                    </div>
+                </div>
+
+                <!-- Panel Contextual de Potenciadores Activos con Temporizador en Tiempo Real -->
+                <div id="hud-potenciadores-activos" class="hud-potenciadores-contenedor"></div>
+            </div>
+
+            <!-- Centro: Cinta de Rumbo, Misión Actual y Barra de Jefe Final -->
+            <div class="hud-panel-centro">
+                <div class="cinta-brujula-hud">
+                    <span>240</span><span>·</span><span>W</span><span>·</span><span>300</span><span>·</span><span class="rumbo-activo">N 000▲</span><span>·</span><span>060</span><span>·</span><span>E</span><span>·</span><span>120</span>
+                </div>
+                <div id="hud-badge-mision" class="badge-mision-actual">MISIÓN 1 · OLEADA 1 DE 10 · 00:00</div>
+                <div id="hud-caja-jefe" class="barra-jefe-contenedor oculta">
+                    <div class="barra-jefe-titulo">
+                        <span id="hud-nombre-jefe">JEFE FINAL</span>
+                        <span id="hud-fase-jefe-tag">¡AMENAZA NIVEL OMEGA!</span>
+                    </div>
+                    <div class="hud-barra-track jefe">
+                        <div id="hud-fill-jefe" class="barra-jefe-fill"></div>
+                        <div class="marca-fase-jefe f1"></div>
+                        <div class="marca-fase-jefe f2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Derecha: Puntuación, Multiplicador, Monedas y Pausa -->
+            <div class="hud-panel-derecha">
+                <div class="hud-dato-bloque">
+                    <span>SCORE TÁCTICO</span>
+                    <strong id="hud-txt-puntos">0</strong>
+                </div>
+                <div class="hud-dato-bloque">
+                    <span>CADENA</span>
+                    <strong id="hud-txt-combo" class="combo-activo">x1</strong>
+                </div>
+                <div class="hud-dato-bloque">
+                    <span>CRÉDITOS</span>
+                    <strong id="hud-txt-monedas" style="color:#ffd54f;">+0</strong>
+                </div>
+                <button class="btn-hud-pausa" onclick="Motor3D.alternarPausa()">
+                    <span data-ico="pausa"></span>
+                    <span>PAUSA</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Banner Táctico No Invasivo de Peligro Ambiental / Meteoros / Potenciador -->
+        <div id="hud-alerta-peligro" class="alerta-peligro-hud oculta">
+            <span data-ico="meteoro"></span>
+            <span id="hud-alerta-peligro-txt">METEOROS EN TRAYECTORIA · EVITAR [A / D]</span>
+        </div>
+
+        <!-- Parte Inferior: Guía de Tutorial y Reactor de Superpoder [Q] -->
+        <div class="hud-fila-inferior">
+            <div id="hud-banner-tutorial" class="banner-tutorial-hud oculta"></div>
+            <div class="hud-fila-acciones">
+                <div id="hud-maniobra" class="hud-maniobra lista" onclick="Motor3D.ejecutarManiobraEvasiva()">
+                    <span>TONEL [SHIFT]</span>
+                    <div class="hud-maniobra-track"><div id="hud-fill-maniobra" class="hud-maniobra-fill"></div></div>
+                </div>
+                <div id="hud-caja-superpoder" class="hud-barra-poder-caja" onclick="Motor3D.activarSuperpoderJugador()">
+                    <strong id="hud-txt-poder">¡SUPERPODER LISTO! [TECLA Q]</strong>
+                    <div class="poder-barra-ext">
+                        <div id="hud-fill-poder" class="poder-barra-int"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. OVERLAY DE PAUSA / VICTORIA / DERROTA -->
+    <div id="overlay-resultado" class="oculta"></div>
+
+    <!-- 6. NOTIFICACIÓN TOAST -->
+    <div id="toast-notificacion" class="oculta"></div>
+
+    <!-- Motores Three.js, Iconografía SVG Propia y Scripts del Juego -->
+    <script src="lib/three.min.js"></script>
+    <script src="lib/GLTFLoader.js"></script>
+    <script src="js/iconos.js"></script>
+    <script src="js/motor3d.js"></script>
+    <script src="js/interfaz.js"></script>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            // Inyectar todos los iconos vectoriales propios (Cero emojis)
+            IconosJuego.inyectarDefs();
+            document.querySelectorAll('[data-ico]').forEach(el => {
+                el.innerHTML = IconosJuego.obtener(el.getAttribute('data-ico'));
+            });
+
+            const canvas = document.getElementById('lienzo-3d');
+            Motor3D.inicializar(canvas);
+            InterfazJuego.inicializarUI();
+
+            // Secuencia de carga cinemática sobre el escenario 3D en vivo
+            const fill = document.getElementById('barra-carga-fill');
+            const txt = document.getElementById('texto-carga');
+            const avisoContinuar = document.getElementById('aviso-continuar-intro');
+            const pantallaCarga = document.getElementById('pantalla-carga');
+            const menuPrincipal = document.getElementById('capa-menu-principal');
+
+            let prog = 0;
+            const etapas = [
+                'INICIANDO MOTOR 3D Y SHADERS DE ILUMINACIÓN...',
+                'CONSTRUYENDO HANGAR ESPACIAL Y MODELOS 3D...',
+                'PREPARANDO ESCENARIOS DE MONTAÑA, GLACIAR Y VOLCÁN...',
+                '¡SISTEMAS LISTOS PARA EL DESPEGUE!'
+            ];
+
+            const timer = setInterval(() => {
+                prog += 25;
+                if (prog >= 100) {
+                    prog = 100;
+                    clearInterval(timer);
+                    txt.textContent = etapas[3];
+                    fill.style.width = '100%';
+                    // Transición automática e inmediata al menú principal
+                    setTimeout(() => {
+                        entrarAlMenu();
+                    }, 420);
+                } else {
+                    txt.textContent = etapas[Math.floor(prog / 30)] || etapas[0];
+                    fill.style.width = prog + '%';
+                }
+            }, 200);
+
+            function entrarAlMenu() {
+                if (pantallaCarga.classList.contains('oculta')) return;
+                pantallaCarga.classList.add('oculta');
+                menuPrincipal.classList.remove('oculta');
+                if (window.Motor3D) Motor3D.sonarEfecto('poder');
+            }
+
+            // Omitir o avanzar de inmediato al hacer clic
+            pantallaCarga.addEventListener('click', entrarAlMenu);
+            window.addEventListener('keydown', () => {
+                if (!pantallaCarga.classList.contains('oculta')) entrarAlMenu();
+            });
+        });
+    </script>
+</body>
+</html>

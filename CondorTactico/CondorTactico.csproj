@@ -8,11 +8,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>CondorTactico</AssemblyName>
     <RootNamespace>CondorTactico</RootNamespace>
-    <Title>Cóndor Táctico</Title>
-    <Product>Cóndor Táctico - Simulador de Combate Aéreo</Product>
-    <Description>Simulador táctico de combate aéreo 2D de alta fidelidad con motor gráfico vectorial 4x SSAA, particionamiento espacial O(N+K), streaming asíncrono y multijugador UDP.</Description>
+    <Title>Cóndor Táctico 3D</Title>
+    <Product>Cóndor Táctico - Combate Aéreo 3D</Product>
+    <Description>Videojuego de combate aéreo 3D con campaña progresiva, tienda, hangar interactivo y multijugador en red local e Internet.</Description>
     <Company>Universidad Nacional de Juliaca (UNAJ)</Company>
-    <Version>3.1.0.0</Version>
+    <Version>5.1.0.0</Version>
+    <NoWarn>MSB3277</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
 </Project>

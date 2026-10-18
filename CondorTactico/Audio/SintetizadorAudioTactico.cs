@@ -119,6 +119,8 @@ namespace CondorTactico.Audio
             ReproducirWavAsincrono(_wavAlertaLock);
         }
 
+        public static void ReproducirAlertaRadar() => ReproducirAlertaLock();
+
         public static void ReproducirSonicBoom()
         {
             if (_audioSilenciado || _wavSonicBoom == null) return;
